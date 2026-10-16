@@ -1,0 +1,116 @@
+script_file_name: multi_exchange_signal_poller.py
+controllers_config: []
+connector_name: bybit_paper_trade
+trading_pair: BTC-USDT
+signals_file: /home/hummingbot/data/signals.json
+min_confidence: 0.75
+order_quote: 1
+cooldown_sec: 1800
+poll_interval_sec: 15
+allow_test_signals: false
+exchanges:
+  - name: bybit_paper_trade
+    trading_pairs:
+      - BTC-USDT
+      - ETH-USDT
+    priority: 10
+    enabled: true
+    min_spread_bps: 25.0
+    max_position_quote: 500
+    is_perpetual: false
+  - name: bybit_perpetual_paper_trade
+    trading_pairs:
+      - BTC-USDT
+    priority: 20
+    enabled: true
+    min_spread_bps: 30.0
+    max_position_quote: 500
+    is_perpetual: true
+  - name: okx_paper_trade
+    trading_pairs:
+      - BTC-USDT
+      - ETH-USDT
+    priority: 15
+    enabled: true
+    min_spread_bps: 25.0
+    max_position_quote: 500
+    is_perpetual: false
+  - name: okx_perpetual_paper_trade
+    trading_pairs:
+      - BTC-USDT
+    priority: 25
+    enabled: true
+    min_spread_bps: 30.0
+    max_position_quote: 500
+    is_perpetual: true
+  - name: kraken_paper_trade
+    trading_pairs:
+      - BTC-USDT
+      - ETH-USDT
+    priority: 30
+    enabled: true
+    min_spread_bps: 30.0
+    max_position_quote: 500
+    is_perpetual: false
+  - name: kucoin_paper_trade
+    trading_pairs:
+      - BTC-USDT
+      - ETH-USDT
+    priority: 35
+    enabled: true
+    min_spread_bps: 30.0
+    max_position_quote: 500
+    is_perpetual: false
+  - name: gate_io_paper_trade
+    trading_pairs:
+      - BTC-USDT
+      - ETH-USDT
+    priority: 40
+    enabled: false
+    min_spread_bps: 35.0
+    max_position_quote: 500
+    is_perpetual: false
+  - name: gate_io_perpetual_paper_trade
+    trading_pairs:
+      - BTC-USDT
+    priority: 45
+    enabled: false
+    min_spread_bps: 35.0
+    max_position_quote: 500
+    is_perpetual: true
+  - name: bitget_paper_trade
+    trading_pairs:
+      - BTC-USDT
+      - ETH-USDT
+    priority: 50
+    enabled: true
+    min_spread_bps: 30.0
+    max_position_quote: 500
+    is_perpetual: false
+  - name: bitget_perpetual_paper_trade
+    trading_pairs:
+      - BTC-USDT
+    priority: 55
+    enabled: true
+    min_spread_bps: 30.0
+    max_position_quote: 500
+    is_perpetual: true
+  - name: bing_x_paper_trade
+    trading_pairs:
+      - BTC-USDT
+      - ETH-USDT
+    priority: 60
+    enabled: true
+    min_spread_bps: 35.0
+    max_position_quote: 500
+    is_perpetual: false
+max_total_exposure_quote: 5000
+max_concurrent_orders: 10
+max_hold_minutes: 360
+control_file: /home/hummingbot/data/trading_control.json
+emergency_loss_pct: 3.0
+default_sl_pct: 2.0
+default_tp_pct: 3.5
+min_free_quote: 0
+max_daily_loss_quote: 20
+trades_file: /home/hummingbot/data/trades.json

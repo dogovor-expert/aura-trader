@@ -1,0 +1,118 @@
+{
+  "project": "polymarket-oracle",
+  "location": "D:\\polymarket-oracle",
+  "poll_interval_sec": 300,
+  "proxy": {
+    "enabled": false,
+    "url": "socks5h://USER:PASSWORD@HOST:PORT",
+    "note": "SOCKS5-прокси для доступа к Polymarket/LLM. Заполни host/user/pass или оставь enabled=false.",
+    "expires": "2026-10-27T21:52"
+  },
+  "price_source": {
+    "note": "Bybit blocked both directly and via US proxy (CloudFront 403). Primary OKX, fallback chain auto.",
+    "primary": "okx",
+    "sources": {
+      "okx": {
+        "url": "https://www.okx.com/api/v5/market/ticker",
+        "params": {
+          "instId": "BTC-USDT"
+        },
+        "parser": "okx"
+      },
+      "kraken": {
+        "url": "https://api.kraken.com/0/public/Ticker",
+        "params": {
+          "pair": "XBTUSD"
+        },
+        "parser": "kraken"
+      },
+      "coinbase": {
+        "url": "https://api.coinbase.com/v2/prices/BTC-USD/spot",
+        "params": {},
+        "parser": "coinbase"
+      },
+      "coingecko": {
+        "url": "https://api.coingecko.com/api/v3/simple/price",
+        "params": {
+          "ids": "bitcoin",
+          "vs_currencies": "usd"
+        },
+        "parser": "coingecko"
+      },
+      "bybit": {
+        "url": "https://api.bybit.com/v5/market/tickers",
+        "params": {
+          "category": "spot",
+          "symbol": "BTCUSDT"
+        },
+        "parser": "bybit",
+        "note": "включится сам, если GeoIP разблокируется или будет VPN/прокси"
+      }
+    },
+    "http_proxy": "",
+    "https_proxy": ""
+  },
+  "polymarket_events": [
+    {
+      "slug": "fed-decision-in-october-20260617190323537",
+      "label": "FED_OCT",
+      "desc": "Решение ФРС в октябре (снижение/пауза/повышение)"
+    },
+    {
+      "slug": "fed-decision-in-december-20260729232808632",
+      "label": "FED_DEC",
+      "desc": "Решение ФРС в декабре"
+    },
+    {
+      "slug": "us-recession-by-end-of-2026",
+      "label": "RECESSION_2026",
+      "desc": "Рецессия США до конца 2026"
+    },
+    {
+      "slug": "bitcoin-price-on-october-14-2026",
+      "label": "BTC_TOMORROW",
+      "desc": "Ожидание цены BTC на завтра (консенсус толпы)"
+    },
+    {
+      "slug": "when-will-bitcoin-hit-150k",
+      "label": "BTC_150K",
+      "desc": "Когда BTC ударит $150k (долгосрочный сентимент)"
+    },
+    {
+      "slug": "ethereum-above-on-october-14-2026",
+      "label": "ETH_TOMORROW",
+      "desc": "Ожидание цены ETH на завтра"
+    }
+  ],
+  "signal_rules": {
+    "note": "Эвристика по умолчанию. LLM-аналитик (analyst.py) даёт более умную оценку поверх неё.",
+    "prob_spike_threshold": 0.02,
+    "btc_divergence_note": "если вероятность бычьего исхода выросла на >=10 п.п. за окно, а цена BTC стоит/падает — это лонг-дивергенция"
+  },
+  "execution": {
+    "mode": "paper",
+    "note": "paper = только лог сигналов, без реальных ордеров. Для live нужен Hummingbot + VPN.",
+    "hummingbot": {
+      "needs_docker": true,
+      "bybit_connector": "bybit_perpetual",
+      "webhook_port": 8181,
+      "webhook_url": "http://127.0.0.1:8181/signal",
+      "signals_file": "D:/Hummingbot/signals.json",
+      "send_on": [
+        "LONG",
+        "SHORT"
+      ]
+    }
+  },
+  "llm": {
+    "provider": "anymodel",
+    "l1_model": "cx/gpt-6-luna",
+    "l2_enabled": true,
+    "l2_provider": "anymodel",
+    "l2_model": "cc/claude-haiku-4-5-20251001",
+    "l2_trigger_conf": 0.65,
+    "trade_conf": 0.75,
+    "timeout": 60,
+    "note": "L1=cx/gpt-6-luna, L2=cc/claude-haiku-4-5-20251001 via anymodel.org (OpenAI-compatible). Key in ANYMODEL_API_KEY (user env). Fallback without paid keys: groq openai/gpt-oss-120b + qwen/qwen3.8-27b."
+  }
+}

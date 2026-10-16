@@ -1,0 +1,72 @@
+script_file_name: cross_exchange_arbitrage.py
+poll_interval_sec: 3
+confirmation_polls: 3
+leg_timeout_sec: 3
+cooldown_sec: 20
+request_per_minute: 240
+withdraw_fee_usd: 25
+max_skew_usd: 10
+routes:
+  - buy_exchange: bybit_paper_trade
+    sell_exchange: okx_paper_trade
+    trading_pair: BTC-USDT
+    enabled: true
+    priority: 10
+    order_size_usd: 10
+    min_net_bps: 45
+    max_slippage_bps: 20
+    min_depth_usd: 200
+    buy_fee_bps: 10
+    sell_fee_bps: 10
+    buy_network: btc
+    sell_network: btc
+    buy_deposit_enabled: true
+    sell_withdrawal_enabled: true
+  - buy_exchange: okx_paper_trade
+    sell_exchange: bybit_paper_trade
+    trading_pair: BTC-USDT
+    enabled: true
+    priority: 20
+    order_size_usd: 10
+    min_net_bps: 45
+    max_slippage_bps: 20
+    min_depth_usd: 200
+    buy_fee_bps: 10
+    sell_fee_bps: 10
+    buy_network: btc
+    sell_network: btc
+    buy_deposit_enabled: true
+    sell_withdrawal_enabled: true
+  # Kraken отвечает с перебоями из этой сети (error requesting exchange info),
+  # а Hummingbot не стартует стратегию, пока не готовы ВСЕ коннекторы.
+  # Маршрут с kraken отключён, пока биржа не начнёт отвечать стабильно.
+  - buy_exchange: okx_paper_trade
+    sell_exchange: bitget_paper_trade
+    trading_pair: BTC-USDT
+    enabled: true
+    priority: 40
+    order_size_usd: 10
+    min_net_bps: 45
+    max_slippage_bps: 20
+    min_depth_usd: 200
+    buy_fee_bps: 10
+    sell_fee_bps: 10
+    buy_network: btc
+    sell_network: btc
+    buy_deposit_enabled: true
+    sell_withdrawal_enabled: true
+  - buy_exchange: bybit_paper_trade
+    sell_exchange: bitget_paper_trade
+    trading_pair: BTC-USDT
+    enabled: true
+    priority: 25
+    order_size_usd: 10
+    min_net_bps: 45
+    max_slippage_bps: 20
+    min_depth_usd: 200
+    buy_fee_bps: 10
+    sell_fee_bps: 10
+    buy_network: btc
+    sell_network: btc
+    buy_deposit_enabled: true
+    sell_withdrawal_enabled: true

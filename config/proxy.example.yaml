@@ -1,0 +1,8 @@
+proxy:
+  # Пример. Реальные данные не коммитить: этот файл перекрывает config.json.
+  host: HOST
+  port: 0000
+  user: USER
+  pass: PASSWORD
+  url: socks5h://USER:PASSWORD@HOST:PORT
+  expires: 2026-01-01T00:00

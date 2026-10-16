@@ -1,0 +1,684 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Aura Trader — мониторинг</title>
+<style>
+  :root{
+    --bg:#0b0e14; --panel:#121722; --panel-2:#171d2b; --line:#232b3d;
+    --txt:#e6ebf5; --muted:#8a95ad; --dim:#5f6a80;
+    --up:#22c55e; --down:#ef4444; --warn:#f59e0b; --info:#38bdf8; --accent:#7c5cff;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--txt);
+    font:14px/1.5 ui-sans-serif,system-ui,"Segoe UI",Roboto,Arial,sans-serif}
+  .wrap{max-width:1500px;margin:0 auto;padding:18px 20px 48px}
+  header{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:18px}
+  .logo{display:flex;align-items:center;gap:10px;font-weight:800;font-size:18px;letter-spacing:.2px}
+  .logo span.dot{width:10px;height:10px;border-radius:50%;background:var(--accent);box-shadow:0 0 12px var(--accent)}
+  .sub{color:var(--muted);font-size:12.5px}
+  .spacer{flex:1}
+  .pill{display:inline-flex;align-items:center;gap:6px;padding:5px 11px;border-radius:999px;
+    background:var(--panel-2);border:1px solid var(--line);color:var(--muted);font-size:12px}
+  .pill b{color:var(--txt);font-weight:600}
+  .live{width:8px;height:8px;border-radius:50%;background:var(--up);box-shadow:0 0 0 0 rgba(34,197,94,.6);animation:pulse 2s infinite}
+  .live.stale{background:var(--warn);animation:none}
+  .live.down{background:var(--down);animation:none}
+  @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(34,197,94,.5)}70%{box-shadow:0 0 0 8px rgba(34,197,94,0)}100%{box-shadow:0 0 0 0 rgba(34,197,94,0)}}
+  .grid{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(215px,1fr));margin-bottom:16px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px 16px}
+  .card h3{margin:0 0 8px;font-size:11px;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);font-weight:700}
+  .val{font-size:26px;font-weight:800;letter-spacing:-.4px;font-variant-numeric:tabular-nums}
+  .val.sm{font-size:18px}
+  .meta{color:var(--muted);font-size:12px;margin-top:4px}
+  .up{color:var(--up)} .down{color:var(--down)} .warn{color:var(--warn)} .info{color:var(--info)} .muted{color:var(--muted)}
+  .cols{display:grid;gap:14px;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr)}
+  @media (max-width:1000px){.cols{grid-template-columns:1fr}}
+  .card h2{margin:0 0 12px;font-size:15px;font-weight:700;display:flex;align-items:center;gap:8px}
+  .card h2 .count{color:var(--dim);font-weight:500;font-size:12px}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th{text-align:left;color:var(--dim);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.06em;
+     padding:6px 8px;border-bottom:1px solid var(--line)}
+  td{padding:7px 8px;border-bottom:1px solid #1b2231;vertical-align:middle}
+  tr:last-child td{border-bottom:none}
+  .mono{font-variant-numeric:tabular-nums;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px}
+  .bar{height:7px;border-radius:4px;background:#1e2534;overflow:hidden;min-width:70px}
+  .bar>i{display:block;height:100%;border-radius:4px;background:linear-gradient(90deg,#3b82f6,#7c5cff)}
+  .tag{display:inline-block;padding:2px 8px;border-radius:6px;font-size:11px;font-weight:700;letter-spacing:.03em}
+  .tag.long{background:rgba(34,197,94,.15);color:var(--up)}
+  .tag.short{background:rgba(239,68,68,.15);color:var(--down)}
+  .tag.wait{background:rgba(245,158,11,.15);color:var(--warn)}
+  .tag.neutral{background:rgba(138,149,173,.15);color:var(--muted)}
+  .ev{border:1px solid var(--line);border-radius:12px;padding:11px 13px;margin-bottom:10px;background:var(--panel-2)}
+  .ev h4{margin:0 0 8px;font-size:13px;font-weight:700;display:flex;justify-content:space-between;gap:10px}
+  .ev h4 span{color:var(--dim);font-weight:500;font-size:11.5px}
+  .m{display:grid;grid-template-columns:1fr 62px 46px;gap:10px;align-items:center;padding:3px 0;font-size:12.5px}
+  .m .q{color:var(--txt);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .m .p{text-align:right;font-variant-numeric:tabular-nums;font-weight:700}
+  .foot{color:var(--dim);font-size:11.5px;margin-top:22px;border-top:1px solid var(--line);padding-top:12px}
+  .row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .ex{display:inline-flex;align-items:center;gap:6px;padding:4px 9px;border-radius:8px;background:var(--panel-2);
+      border:1px solid var(--line);font-size:12px;margin:0 6px 6px 0}
+  .ex i{width:7px;height:7px;border-radius:50%;background:var(--dim);font-style:normal}
+  .ex.on i{background:var(--up)}
+.ex.perp{border-color:#3b2f63}
+  .ex.perp i{background:var(--accent)}
+  .modeBanner{display:flex;align-items:center;gap:12px;flex-wrap:wrap;border-radius:12px;padding:11px 16px;
+    margin-bottom:16px;border:1px solid var(--line);background:var(--panel-2);font-size:14px}
+  .modeBanner .badge{font-weight:800;font-size:13px;letter-spacing:.04em;padding:5px 12px;border-radius:8px;white-space:nowrap}
+  .modeBanner .detail{color:var(--muted);font-size:12.5px;margin-left:auto}
+  .modeBanner.demo{border-color:rgba(34,197,94,.5);background:rgba(34,197,94,.08)}
+  .modeBanner.demo .badge{background:var(--up);color:#04240f}
+  .modeBanner.live{border-color:rgba(239,68,68,.6);background:rgba(239,68,68,.1)}
+  .modeBanner.live .badge{background:var(--down);color:#fff}
+  .modeBanner.mixed{border-color:rgba(245,158,11,.6);background:rgba(245,158,11,.1)}
+  .modeBanner.mixed .badge{background:var(--warn);color:#2a1a02}
+  .modeBanner.unknown{border-color:var(--line);background:var(--panel-2)}
+  .modeBanner.unknown .badge{background:var(--dim);color:var(--txt)}
+  button{background:var(--panel-2);color:var(--txt);border:1px solid var(--line);border-radius:9px;
+         padding:6px 12px;font-size:12.5px;cursor:pointer;font-family:inherit}
+  button:hover{border-color:#39435c;background:#1c2434}
+  button[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:#fff}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="logo"><span class="dot"></span>Aura Trader</div>
+    <span class="sub">Oracle → Bridge → Hummingbot</span>
+    <span class="spacer"></span>
+    <span class="pill"><span class="live" id="live"></span><b id="liveTxt">подключение…</b></span>
+    <span class="pill">обновлено <b id="upd">—</b></span>
+    <button id="autoBtn" aria-pressed="true">авто 5с</button>
+    <button id="refreshBtn">обновить</button>
+  </header>
+
+  <div id="modeBanner" class="modeBanner unknown"></div>
+
+  <section class="grid" id="cards"></section>
+
+  <section class="cols">
+    <div>
+<div class="card" style="margin-bottom:14px">
+        <h2>Сделки и калибровка <span class="count" id="trMeta"></span></h2>
+        <div id="trades"></div>
+      </div>
+
+      <div class="card" style="margin-bottom:14px">
+        <h2>Доход и убыток <span class="count" id="pnlMeta"></span></h2>
+        <div id="pnl"></div>
+      </div>
+
+      <div class="card" style="margin-bottom:14px">
+        <h2>Торговля: запустить / остановить</h2>
+        <div id="tradingToggle"></div>
+      </div>
+
+      <div class="card" style="margin-bottom:14px">
+        <h2>Защиты и маршруты <span class="count" id="guardMeta"></span></h2>
+        <div id="guards"></div>
+      </div>
+
+      <div class="card" style="margin-bottom:14px">
+        <h2>Торговля стратегии <span class="count" id="ordCount"></span></h2>
+        <div id="orders"></div>
+      </div>
+      <div class="card" style="margin-bottom:14px">
+        <h2>Рынки Polymarket <span class="count" id="mkCount"></span></h2>
+        <div id="groups"></div>
+      </div>
+      <div class="card">
+        <h2>Циклы оракула</h2>
+        <table>
+          <thead><tr><th>Время</th><th>Вердикт</th><th>BTC</th><th>Δ</th><th>LLM L1</th><th>Итог</th></tr></thead>
+          <tbody id="cycles"></tbody>
+        </table>
+      </div>
+    </div>
+    <div>
+      <div class="card" style="margin-bottom:14px">
+        <h2>Биржи стратегии <span class="count" id="exCount"></span></h2>
+        <div id="exchanges"></div>
+      </div>
+      <div class="card" style="margin-bottom:14px">
+        <h2>Сигнал в Hummingbot</h2>
+        <div id="signalBox"></div>
+      </div>
+<div class="card" style="margin-bottom:14px">
+        <h2>Стратегии <span class="count" id="stratActive"></span></h2>
+        <div id="strategies"></div>
+      </div>
+
+      <div class="card" style="margin-bottom:14px">
+        <h2>Параметры торговли <span class="count" id="settingsState"></span></h2>
+        <div id="settings"></div>
+      </div>
+
+      <div class="card" style="margin-bottom:14px">
+        <h2>Сканер пампов <span class="count" id="pumpMeta"></span></h2>
+        <div id="pumps"></div>
+      </div>
+
+      <div class="card" style="margin-bottom:14px">
+        <h2>Новости <span class="count" id="newsMeta"></span></h2>
+        <div id="news"></div>
+      </div>
+
+      <div class="card">
+        <h2>Модели решений <span class="count" id="modelProv"></span></h2>
+        <div id="models"></div>
+      </div>
+
+      <div class="card">
+        <h2>События-источники</h2>
+        <div id="events"></div>
+      </div>
+    </div>
+  </section>
+
+  <div class="foot" id="foot"></div>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let timer = null, auto = true;
+
+const pct = (v) => (v * 100).toFixed(1) + '%';
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const age = (sec) => {
+  if (sec == null) return '—';
+  if (sec < 60) return sec + ' с назад';
+  if (sec < 3600) return Math.floor(sec / 60) + ' мин назад';
+  if (sec < 86400) return Math.floor(sec / 3600) + ' ч назад';
+  return Math.floor(sec / 86400) + ' дн назад';
+};
+const sigTag = (s) => {
+  const k = String(s || '').toUpperCase();
+  const cls = k === 'LONG' ? 'long' : k === 'SHORT' ? 'short' : k === 'WAIT' ? 'wait' : 'neutral';
+  return `<span class="tag ${cls}">${esc(s || '—')}</span>`;
+};
+
+function card(title, value, meta, cls = '') {
+  return `<div class="card"><h3>${esc(title)}</h3>
+    <div class="val ${cls}">${value}</div>
+    <div class="meta">${meta}</div></div>`;
+}
+
+function render(s) {
+  const o = s.oracle || {}, b = s.bridge || {}, h = s.hummingbot || {};
+  const chg = (o.seconds_since_cycle != null && o.seconds_since_cycle < 900) ? '' : '';
+  const final = o.last_final || {};
+
+  const M = s.trade_mode || {};
+  const mb = $('modeBanner');
+  mb.className = 'modeBanner ' + (M.mode || 'unknown');
+  const mCounts = M.mode === 'demo'
+    ? `${M.paper_count} бирж(и) в бумажном режиме`
+    : `${M.live_count} боевых · ${M.paper_count} бумажных`;
+  mb.innerHTML = `<span class="badge">${esc(M.label || 'режим неизвестен')}</span>
+    <span>${esc(M.note || '')}</span><span class="detail">${esc(mCounts)}</span>`;
+
+  $('cards').innerHTML = [
+    card('BTC', o.btc ? o.btc.toLocaleString('ru-RU', {maximumFractionDigits:1}) : '—',
+      `источник ${esc(o.btc_src || '—')} · цикл ${age(o.seconds_since_cycle)}`, chg),
+    card('Решение', sigTag(final.signal || o.last_verdict),
+      `уверенность ${final.conf != null ? final.conf : '—'} · вердикт ${esc(o.last_verdict || '—')}`),
+    card('Цикл оракула', `${o.seconds_to_next_cycle ?? '—'} с`,
+      `интервал ${o.cycle_interval_sec} с · история ${esc((o.history_updated || '—').replace('T',' ').slice(11,19))}`),
+    card('Hummingbot', `<span class="val sm">${esc(h.status || '—')}</span>`,
+      `контейнер ${esc(h.container || 'hummingbot')}`, h.available ? 'info' : 'warn'),
+    card('Сигнал в стратегию', b.signal_delivered ? sigTag((b.signal_delivered.signal || {}).final) : '—',
+      b.signal_delivered ? `BTC ${(b.signal_delivered.signal || {}).btc ?? '—'} · ${age(b.signal_age_sec)}` : 'ещё не передавался',
+      b.signal_age_sec != null && b.signal_age_sec > 3600 ? 'warn' : '')
+  ].join('');
+
+  const groups = s.groups || [];
+  $('mkCount').textContent = groups.reduce((a, g) => a + g.open, 0) + ' рынков';
+  $('groups').innerHTML = groups.map((g) => `
+    <div class="ev">
+      <h4>${esc(g.title)} <span>${g.open} открыто${g.total !== g.open ? ' / ' + g.total : ''}</span></h4>
+      ${g.markets.length ? g.markets.map((m) => `
+        <div class="m" title="${esc(m.question)}">
+          <div class="q">${esc(m.question)}</div>
+          <div class="bar"><i style="width:${Math.max(2, m.prob * 100).toFixed(1)}%"></i></div>
+          <div class="p">${pct(m.prob)}</div>
+        </div>`).join('') : '<div class="meta">Нет открытых рынков (все разрешены)</div>'}
+    </div>`).join('');
+
+  $('cycles').innerHTML = (s.cycles || []).map((c) => `
+    <tr>
+      <td class="mono">${esc((c.ts || '').replace('T', ' ').slice(0, 19))}</td>
+      <td>${sigTag(c.verdict)}</td>
+      <td class="mono">${c.btc ? c.btc.toLocaleString('ru-RU') : '—'}</td>
+      <td class="mono ${c.chg >= 0 ? 'up' : 'down'}">${c.chg != null ? (c.chg >= 0 ? '+' : '') + c.chg + '%' : '—'}</td>
+      <td class="mono">${c.l1 ? esc(c.l1.signal) + ' ' + c.l1.conf + (c.l1.regime ? ' · ' + esc(c.l1.regime) : '') : '—'}</td>
+      <td>${c.final ? sigTag(c.final.signal) + ' <span class="mono muted">' + c.final.conf + '</span>' : '—'}</td>
+    </tr>`).join('') || '<tr><td colspan="6" class="muted">Нет данных</td></tr>';
+
+  const tr = s.trades || {};
+  $('trMeta').textContent = tr.available
+    ? `${tr.count} закрыто · винрейт ${(tr.win_rate * 100).toFixed(0)}% · P&L ${tr.pnl_quote >= 0 ? '+' : ''}${tr.pnl_quote.toFixed(6)} USDT · в позициях ${tr.open}`
+    : (tr.available === false ? 'закрытых сделок ещё нет' : '');
+  $('trades').innerHTML = tr.available ? (() => {
+    const cal = Object.entries(tr.calibration || {});
+    const calHtml = cal.length
+      ? '<div class="row" style="gap:8px;margin-bottom:8px">' + cal.map(([k, v]) =>
+          `<span class="tag neutral">conf ${esc(k)}: ${v.n} сделок, P&L ${v.avg_pnl >= 0 ? '+' : ''}${v.avg_pnl.toFixed(6)}</span>`).join('') + '</div>'
+      : '<div class="muted" style="margin-bottom:8px">Калибровка появится после первых закрытых сделок с уверенностью</div>';
+    const rows = (tr.recent || []).map((t) => `
+      <div class="row" style="gap:8px;padding:4px 0;border-bottom:1px solid #1b2231">
+        <span class="tag ${t.pnl_quote > 0 ? 'long' : t.pnl_quote < 0 ? 'short' : 'neutral'}">${t.pnl_pct > 0 ? '+' : ''}${t.pnl_pct}%</span>
+        <span style="flex:1;min-width:0">${esc(t.reason || '')}</span>
+        <span class="muted mono" style="font-size:11px">conf ${t.conf ?? '—'} · ${esc(String(t.exchange || '').replace(/_paper_trade$/, ''))}</span>
+      </div>`).join('');
+    return calHtml + rows;
+  })() : '<div class="muted">Выходы ещё не срабатывали — пока нет закрытых сделок</div>';
+
+  const P = s.pnl || {};
+  const sign = (v) => (v > 0 ? '+' : '') + Number(v).toFixed(4);
+  const cls = (v) => (v > 0 ? 'up' : v < 0 ? 'down' : 'muted');
+  $('pnlMeta').textContent = P.available ? `${P.trades} закрыто · ${P.open_positions} в позициях` : 'пока нет закрытых сделок';
+  $('pnl').innerHTML = !P.available
+    ? '<div class="muted">Нет закрытых сделок — система копит статистику</div>'
+    : (() => {
+        const curve = (P.curve || []);
+        const max = Math.max(...curve.map(Math.abs), 0.0001);
+        const spark = curve.map((v) => `<i style="height:${Math.max(2, (Math.abs(v) / max) * 22)}px;background:${v >= 0 ? '#22c55e' : '#ef4444'}"></i>`).join('');
+        const byDay = (P.by_day || []).slice(-7).map((d) =>
+          `<span class="tag ${d.pnl >= 0 ? 'long' : 'short'}" title="${d.wins}/${d.trades} прибыльных">${esc(d.day.slice(5))} ${sign(d.pnl)}</span>`).join(' ');
+        const byEx = (P.by_exchange || []).map(([ex, r]) =>
+          `<tr><td>${esc(ex)}</td><td class="mono">${r.trades}</td><td class="mono">${Math.round(r.win_rate * 100)}%</td><td class="mono ${cls(r.pnl)}">${sign(r.pnl)}</td></tr>`).join('');
+        const open = (P.open || []).slice(0, 8).map((p) =>
+          `<tr><td>${esc(p.exchange)}</td><td>${esc(p.pair || '')}</td><td class="mono">${p.entry_price ?? '—'}</td>
+           <td class="mono ${cls(p.pnl_pct)}">${p.pnl_pct != null ? (p.pnl_pct > 0 ? '+' : '') + p.pnl_pct + '%' : '—'}</td>
+           <td class="muted mono">SL ${p.sl_pct ?? '—'} / TP ${p.tp_pct ?? '—'}</td></tr>`).join('');
+        return `
+        <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;margin-bottom:10px">
+          <div><div class="meta">Реализовано</div><div class="val sm ${cls(P.realized_pnl)}">${sign(P.realized_pnl)}</div></div>
+          <div><div class="meta">Открыто</div><div class="val sm ${cls(P.unrealized_pnl)}">${sign(P.unrealized_pnl)}</div></div>
+          <div><div class="meta">Всего</div><div class="val sm ${cls(P.total_pnl)}">${sign(P.total_pnl)}</div></div>
+          <div><div class="meta">Винрейт</div><div class="val sm">${Math.round((P.win_rate || 0) * 100)}%</div></div>
+          <div><div class="meta">Профит-фактор</div><div class="val sm">${P.profit_factor ?? '—'}</div></div>
+          <div><div class="meta">Средний %</div><div class="val sm ${cls(P.avg_pnl_pct)}">${P.avg_pnl_pct || 0}%</div></div>
+        </div>
+        <div class="row" style="gap:2px;align-items:flex-end;height:26px;margin-bottom:8px">${spark}</div>
+        <div class="row" style="margin-bottom:10px">${byDay}</div>
+        <div class="meta" style="margin-bottom:4px">Прибыль ${sign(P.gross_profit)} · убыток ${sign(-P.gross_loss)} · лучшая ${sign(P.best_trade)} · худшая ${sign(P.worst_trade)}</div>
+        ${byEx ? `<table style="margin-bottom:10px"><thead><tr><th>Биржа</th><th>Сделок</th><th>Винрейт</th><th>P&L</th></tr></thead><tbody>${byEx}</tbody></table>` : ''}
+        ${open ? `<table><thead><tr><th>Биржа</th><th>Пара</th><th>Вход</th><th>Сейчас</th><th>Стоп/Тейк</th></tr></thead><tbody>${open}</tbody></table>`
+              : '<div class="muted">Открытых позиций нет</div>'}`;
+      })();
+
+  const ctl = (P.control || {});
+  $('tradingToggle').innerHTML = `
+    <div class="row" style="justify-content:space-between;gap:10px;margin-bottom:8px">
+      <div>
+        <div style="font-size:13px;font-weight:700">${ctl.trading_enabled ? 'Агенты торгуют' : 'Торговля остановлена'}</div>
+        <div class="meta">${ctl.trading_enabled
+          ? 'Анализ идёт, ордера выставляются на всех готовых биржах'
+          : 'Система копит сигналы и считает P&L, но ордера не выставляются'}</div>
+      </div>
+      <button id="tradeBtn" style="background:${ctl.trading_enabled ? '#ef4444' : '#22c55e'};border-color:transparent;color:#fff">
+        ${ctl.trading_enabled ? 'Остановить торговлю' : 'Запустить торговлю'}
+      </button>
+    </div>
+    <div class="meta">Последнее переключение: ${esc((ctl.updated_at || '—').replace('T', ' ').slice(0, 19))}${ctl.note ? ' · ' + esc(ctl.note) : ''}</div>
+    <div class="row" style="margin-top:10px;padding-top:10px;border-top:1px solid #1b2231;justify-content:space-between">
+        <div class="meta">Открыто позиций: <b>${(P.open || []).length}</b> · «Остановить торговлю» их <b>не</b> закрывает</div>
+        <button id="closeAllBtn" ${((P.open || []).length ? '' : 'disabled style="opacity:.5;cursor:not-allowed"')}>Закрыть все позиции</button>
+      </div>
+    <div class="row" style="margin-top:10px;padding-top:10px;border-top:1px solid #1b2231;justify-content:space-between;gap:10px">
+        <div>
+          <div style="font-size:13px;font-weight:700">Режим: ${M.mode === 'live' ? 'РЕАЛЬНЫЕ ДЕНЬГИ' : M.mode === 'mixed' ? 'смешанный' : 'демо (бумага)'}</div>
+          <div class="meta">${M.mode === 'live'
+              ? 'Ордера уходят на биржи и тратят реальный баланс'
+              : 'Ордера в симуляторе, реальный баланс не тратится'}${((M.keys_ready || []).length)
+              ? ' · боевые ключи: ' + esc((M.keys_ready || []).join(', '))
+              : ' · боевых ключей нет'}</div>
+        </div>
+        ${M.mode === 'live'
+          ? `<button id="modeBtn" style="background:#f59e0b;border-color:transparent;color:#111">Вернуть в демо</button>`
+          : `<button id="modeBtn" ${(((M.keys_ready || []).length) ? '' : 'disabled title="Сначала добавь боевой коннектор: hbot connect bybit" style="opacity:.5;cursor:not-allowed"')}>Переключить на реальные деньги</button>`}
+      </div>
+    ${ctl.close_all_requested ? `<div class="meta" style="margin-top:6px">⏳ Закрытие запрошено: ${esc(String(ctl.close_all_requested).replace('T', ' ').slice(0, 19))}${ctl.close_all_reason ? ' · ' + esc(ctl.close_all_reason) : ''}</div>` : ''}
+    ${(!ctl.close_all_requested && ctl.close_all_done) ? `<div class="meta" style="margin-top:6px">✓ Все позиции закрыты: ${esc(String(ctl.close_all_done).replace('T', ' ').slice(0, 19))}${ctl.close_all_count ? ' · ' + ctl.close_all_count + ' шт.' : ''}</div>` : ''}`;
+  $('tradeBtn').onclick = async () => {
+    const btn = $('tradeBtn');
+    btn.disabled = true;
+    try {
+      await fetch('/api/trading', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled: !ctl.trading_enabled }),
+      });
+    } finally {
+      setTimeout(() => { btn.disabled = false; load(); }, 1200);
+    }
+  };
+  const closeAll = $('closeAllBtn');
+  if (closeAll) {
+    closeAll.onclick = async () => {
+      if (!confirm('Закрыть все открытые позиции по текущей цене? Это фиксирует P&L.')) return;
+      closeAll.disabled = true;
+      try {
+        await fetch('/api/trading', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ close_all: 'закрыть всё по кнопке в панели' }),
+        });
+      } finally {
+        setTimeout(() => { closeAll.disabled = false; load(); }, 1500);
+      }
+    };
+  }
+  const modeBtn = $('modeBtn');
+  if (modeBtn) {
+    modeBtn.onclick = async () => {
+      const toLive = M.mode !== 'live';
+      const msg = toLive
+        ? 'Переключить на РЕАЛЬНЫЕ ДЕНЬГИ? Ордера начнут списывать реальный баланс. Стратегия будет перезапущена.'
+        : 'Вернуть систему в демо-режим (бумажная торговля)? Стратегия будет перезапущена.';
+      if (!confirm(msg)) return;
+      modeBtn.disabled = true;
+      try {
+        await fetch('/api/trading', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ mode: toLive ? 'live' : 'demo' }),
+        });
+      } finally {
+        setTimeout(() => { modeBtn.disabled = false; load(); }, 2000);
+      }
+    };
+  };
+
+  const st = s.status || {};
+  const plan = st.plan;
+  $('guardMeta').textContent = st.running ? ('работает: ' + st.running) : 'стратегия не запущена';
+  $('guards').innerHTML = (() => {
+    const planHtml = plan
+      ? `<div class="row" style="gap:10px;padding:5px 0 8px;border-bottom:1px solid #1b2231">
+           <span class="tag neutral">размер ×${plan.size_mult}</span>
+           <span class="muted mono">волатильность ${plan.vol_pct}% · режим ${esc(plan.regime)}</span>
+           <span class="muted mono" style="margin-left:auto">SL ${plan.stop_loss_pct}% · TP ${plan.take_profit_pct}%</span>
+         </div>`
+      : '';
+    if (!st.routes || !st.routes.length) {
+      return planHtml + '<div class="muted">Маршруты арбитража появятся, когда стратегия запущена</div>';
+    }
+    const rows = st.routes.map((r) => `
+      <div style="padding:7px 0;border-bottom:1px solid #1b2231">
+        <div class="row" style="gap:8px">
+          <b style="font-size:12.5px">${esc(r.route)}</b>
+          <span class="tag ${r.decision === 'TRADE' ? 'long' : 'neutral'}">${r.decision === 'TRADE' ? 'вход' : 'пропуск'}</span>
+          <span class="mono ${r.net_bps > 0 ? 'up' : 'down'}" style="margin-left:auto">net ${r.net_bps} bps</span>
+        </div>
+        <div class="meta" style="font-size:11px;margin-top:2px">
+          gross ${r.gross_bps} · проскальзывание ${r.slip_bps} · глубина $${Math.round(r.depth_usd).toLocaleString('ru-RU')}
+          · подтверждений ${r.streak} · ребаланс ${esc(r.rebalance)}
+        </div>
+        ${r.reason ? '<div class="meta" style="font-size:11px;color:#f59e0b">' + esc(r.reason) + '</div>' : ''}
+      </div>`).join('');
+    return planHtml + rows;
+  })();
+
+  const ord = s.orders || {};
+  const perEx = ord.per_exchange || {};
+  const exNames = Object.keys(perEx);
+  $('ordCount').textContent = exNames.length
+    ? exNames.length + ' бирж исполняли ордера'
+    : (ord.source === 'log' ? 'пока без ордеров' : '');
+  $('orders').innerHTML = (() => {
+    if (ord.source !== 'log') {
+      return '<div class="muted">Лог стратегии недоступен: ' + esc(ord.error || ord.source) + '</div>';
+    }
+    const batch = ord.last_batch;
+    const head = batch
+      ? `<div class="ev" style="margin-bottom:10px"><h4>Последняя пачка сигнала
+           <span>${batch.count} бирж · ${esc(batch.ts)}</span></h4>
+         <div>${batch.exchanges.map((e) => `<span class="ex on"><i></i>${esc(String(e).replace(/_paper_trade$/, ''))}</span>`).join('')}</div>
+         </div>`
+      : '<div class="muted" style="margin-bottom:10px">Сигналов на исполнение ещё не было</div>';
+    const rows = (ord.recent || []).map((o) => `
+      <tr>
+        <td class="mono">${esc(o.ts)}</td>
+        <td>${sigTag(o.side)}</td>
+        <td class="mono">${esc(o.pair)}</td>
+        <td class="mono">${Number(o.amount).toFixed(6)}</td>
+        <td class="mono">${Number(o.price).toLocaleString('ru-RU')}</td>
+        <td>${esc(String(o.exchange).replace(/_paper_trade$/, ''))}</td>
+      </tr>`).join('');
+    const table = rows
+      ? `<table><thead><tr><th>Время</th><th>Сторона</th><th>Пара</th><th>Кол-во</th><th>Цена</th><th>Биржа</th></tr></thead>
+         <tbody>${rows}</tbody></table>`
+      : '<div class="muted">Ордеров пока нет</div>';
+    return head + table;
+  })();
+
+  const ex = s.exchanges || [];
+  $('exCount').textContent = ex.filter((e) => e.enabled).length + ' включено';
+  $('exchanges').innerHTML = ex.length ? ex.map((e) => `
+    <span class="ex ${e.enabled ? 'on' : ''} ${e.is_perpetual ? 'perp' : ''}">
+      <i></i>${esc(String(e.name || '').replace(/_paper_trade$/, ''))}
+      ${e.is_perpetual ? '<span class="muted">·perp</span>' : ''}
+    </span>`).join('') : '<div class="muted">Список бирж не найден</div>';
+
+const pm = s.pumps || {};
+  const scanned = pm.scanned || {};
+  const scanNames = Object.keys(scanned);
+  $('pumpMeta').textContent = pm.available
+    ? (scanNames.length + ' бирж · ' + (pm.pumps || []).length + ' подтверждено')
+    : 'сканер недоступен';
+  $('pumps').innerHTML = (() => {
+    if (!pm.available) return '<div class="muted">' + esc(pm.error || 'нет данных') + '</div>';
+    const head = '<div class="row" style="gap:6px;flex-wrap:wrap;margin-bottom:8px">' +
+      scanNames.map((n) => '<span class="ex on" style="margin:0"><i></i>' + esc(n) +
+        ' <span class="muted">' + scanned[n] + '</span></span>').join('') + '</div>';
+    const rows = (pm.pumps || []).map((p) => `
+      <div class="row" style="gap:8px;padding:5px 0;border-bottom:1px solid #1b2231">
+        <span class="tag ${p.side === 'UP' ? 'long' : 'short'}">${p.side === 'UP' ? 'рост' : 'падение'}</span>
+        <b style="font-size:12.5px">${esc(p.symbol)}</b>
+        <span class="mono ${p.chg_5m >= 0 ? 'up' : 'down'}">${p.chg_5m >= 0 ? '+' : ''}${p.chg_5m}% за 5м</span>
+        <span class="mono muted">объём ×${p.vol_mult}</span>
+        <span class="muted mono" style="margin-left:auto;font-size:11px">${p.confirmations} бирж: ${esc((p.exchanges || []).join(', '))}</span>
+      </div>`).join('');
+    const thr = pm.thresholds || {};
+    const note = '<div class="meta" style="font-size:11px;margin-top:6px">Порог: движение ≥ ' +
+      (thr.min_move_5m_pct || 0) + '% за 5 мин, объём ×' + (thr.min_volume_mult || 0) +
+      ', подтверждение на ' + (thr.min_confirmations || 0) + '+ биржах</div>';
+    return head + (rows || '<div class="muted">Подтверждённых пампов сейчас нет</div>') + note;
+  })();
+
+  const nw = s.news || {};
+  const ns = nw.sentiment || {};
+  $('newsMeta').textContent = nw.available
+    ? `тональность ${ns.score > 0 ? '+' : ''}${ns.score} · плюс ${ns.positive || 0} / минус ${ns.negative || 0}`
+    : 'нет данных';
+  $('news').innerHTML = nw.available
+    ? (nw.items || []).map((i) => `
+        <div class="row" style="gap:8px;padding:4px 0;border-bottom:1px solid #1b2231;align-items:flex-start">
+          <span class="tag ${i.score > 0 ? 'long' : i.score < 0 ? 'short' : 'neutral'}">${i.score > 0 ? '+' : ''}${i.score}</span>
+          <span style="flex:1;min-width:0">${esc(i.title)}</span>
+          <span class="muted mono" style="font-size:11px;white-space:nowrap">${esc(i.source)} · ${i.age_h != null ? i.age_h + 'ч' : '—'}</span>
+        </div>`).join('')
+    : `<div class="muted">${esc(nw.error || 'Новости ещё не собирались')}</div>`;
+
+  const m = s.models || {};
+  const sig = (b.signal_delivered || {}).signal || {};
+  $('signalBox').innerHTML = `
+    <div class="row" style="margin-bottom:8px">${sigTag(sig.final)} <span class="mono muted">conf ${sig.conf ?? '—'}</span></div>
+    <div class="meta">BTC ${sig.btc ?? '—'} · передано ${esc((b.signal_delivered || {}).ts || '—')}</div>
+    <div class="meta">${b.signal_delivered ? age(b.signal_age_sec) : 'Сигнал ещё не передавался в Hummingbot'}</div>`;
+
+  $('modelProv').textContent = m.provider_label || '';
+  const vline = (v, fallback) => v
+    ? `${sigTag(v.signal)} <span class="mono muted">conf ${v.conf}</span>${v.regime ? ' · ' + esc(v.regime) : ''}`
+    : `<span class="muted">${fallback}</span>`;
+  $('models').innerHTML = `
+    <div class="row" style="justify-content:space-between;padding:6px 0;border-bottom:1px solid #1b2231">
+      <div><span class="muted">L1 Scout</span><div class="mono" style="font-size:12.5px">${esc(m.l1.model)}</div></div>
+      <div style="text-align:right">${vline(m.l1.verdict, 'вердикта ещё нет')}</div>
+    </div>
+    <div class="row" style="justify-content:space-between;padding:6px 0;border-bottom:1px solid #1b2231">
+      <div><span class="muted">L2 Judge${m.l2.trigger ? ' · с ' + m.l2.trigger : ''}</span><div class="mono" style="font-size:12.5px">${esc(m.l2.model)}</div></div>
+      <div style="text-align:right">${vline(m.l2.verdict, m.l2.enabled ? 'ещё не вызывался' : 'выключена')}</div>
+    </div>
+    <div class="row" style="justify-content:space-between;padding:6px 0">
+      <div><span class="muted">Порог торговли</span></div>
+      <div>${m.trade_conf != null ? '<span class="mono">conf ≥ ' + m.trade_conf + '</span>' : '<span class="muted">—</span>'}
+      ${m.final ? ' · итог ' + sigTag(m.final.signal) + ' <span class="mono muted">' + m.final.conf + '</span>' : ''}</div>
+    </div>`;
+
+  $('events').innerHTML = (s.events || []).map((e) =>
+    `<div class="row" style="justify-content:space-between;padding:4px 0;border-bottom:1px solid #1b2231">
+      <span>${esc(e.label || '')}</span><span class="muted">${esc((e.title || e.slug || '').slice(0, 40))}</span>
+    </div>`).join('') || '<div class="muted">—</div>';
+
+  const live = $('live');
+  const fresh = o.seconds_since_cycle != null && o.seconds_since_cycle <= (o.cycle_interval_sec * 2);
+  live.className = 'live' + (fresh ? '' : o.seconds_since_cycle == null ? ' down' : ' stale');
+  $('liveTxt').textContent = fresh ? 'очередь жива' : 'цикл отстаёт';
+  $('upd').textContent = (s.generated_at || '').replace('T', ' ').slice(0, 19);
+  $('foot').textContent = 'Источники: data/history.json · data/last_price.json · logs/signals.log · Hummingbot conf/scripts/multi_exchange_signal_poller.yml';
+}
+
+async function load() {
+  try {
+    const r = await fetch('/api/state', { cache: 'no-store' });
+    render(await r.json());
+} catch (e) {
+    $('liveTxt').textContent = 'ошибка загрузки: ' + (e && e.message ? e.message : e);
+    $('live').className = 'live down';
+  }
+}
+
+async function loadStrategies() {
+  try {
+    const r = await fetch('/api/strategies', { cache: 'no-store' });
+    renderStrategies(await r.json());
+  } catch (e) {
+    $('strategies').innerHTML = '<div class="muted">Каталог стратегий недоступен</div>';
+  }
+}
+
+function renderSettings(c) {
+  const meta = c.settings_meta || {};
+  const vals = c.settings || {};
+  $('settingsState').textContent = 'применено';
+  $('settings').innerHTML =
+    '<div style="margin-bottom:10px"><span class="muted" style="font-size:11.5px">Быстрый размер ордера</span>' +
+    '<div class="row" style="margin-top:5px">' +
+    (c.presets_order_quote || []).map((p) =>
+      '<button data-preset="' + p + '" aria-pressed="' + (Number(vals.order_quote) === p) + '">' + p + ' USDT</button>').join('') +
+    '</div></div>' +
+    Object.keys(meta).map((k) => {
+      const m = meta[k];
+      return '<div style="display:grid;grid-template-columns:1fr 118px;gap:10px;align-items:center;padding:5px 0;border-bottom:1px solid #1b2231">' +
+        '<div><div style="font-size:12.5px">' + esc(m.label) + '</div>' +
+        '<div class="meta" style="font-size:11px">' + esc(m.hint || '') + '</div></div>' +
+        '<input type="number" data-setting="' + esc(k) + '" value="' + (vals[k] != null ? vals[k] : '') +
+        '" min="' + m.min + '" max="' + m.max + '" step="' + m.step +
+        '" style="background:var(--panel-2);border:1px solid var(--line);border-radius:8px;color:var(--txt);padding:6px 8px;font:inherit;font-size:12.5px;width:100%"></div>';
+    }).join('') +
+    '<div class="row" style="margin-top:10px;justify-content:flex-end;gap:8px">' +
+    '<span class="meta" id="settingsHint" style="margin-right:auto">Сохранение перезапустит стратегию</span>' +
+    '<button id="settingsReset">Сбросить</button>' +
+    '<button id="settingsSave" style="background:var(--accent);border-color:var(--accent);color:#fff">Применить</button></div>';
+
+  const gather = () => {
+    const out = {};
+    document.querySelectorAll('[data-setting]').forEach((i) => {
+      const v = parseFloat(i.value);
+      if (!Number.isNaN(v)) out[i.getAttribute('data-setting')] = v;
+    });
+    return out;
+  };
+  document.querySelectorAll('[data-preset]').forEach((b) => {
+    b.onclick = () => {
+      const input = document.querySelector('[data-setting="order_quote"]');
+      if (input) input.value = b.getAttribute('data-preset');
+      document.querySelectorAll('[data-preset]').forEach((x) => x.setAttribute('aria-pressed', 'false'));
+      b.setAttribute('aria-pressed', 'true');
+    };
+  });
+  const saveBtn = $('settingsSave');
+  saveBtn.onclick = async () => {
+    saveBtn.disabled = true;
+    saveBtn.textContent = 'перезапуск…';
+    $('settingsHint').textContent = 'Стратегия перезапускается, это займёт около минуты';
+    try {
+      const r = await fetch('/api/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ settings: gather() }),
+      });
+      const res = await r.json();
+      $('settingsHint').textContent = res.ok ? 'Применено: ' + (res.written || []).join(', ') : ('Ошибка: ' + (res.error || ''));
+    } catch (e) {
+      $('settingsHint').textContent = 'Ошибка связи с мостом';
+    }
+    saveBtn.disabled = false;
+    saveBtn.textContent = 'Применить';
+    setTimeout(loadStrategies, 3500);
+  };
+  $('settingsReset').onclick = loadStrategies;
+}
+
+function renderStrategies(c) {
+  $('stratActive').textContent = c.active ? 'активная включена' : '';
+  $('strategies').innerHTML = (c.strategies || []).map((s) => {
+    const active = c.active === s.id;
+    const ready = s.status === 'ready';
+    const canSwitch = ready && !active;
+    return '<div class="ev"' + (active ? ' style="border-color:#3b82f6"' : '') + '>' +
+      '<div class="row" style="justify-content:space-between;gap:10px"><div style="min-width:0">' +
+      '<div class="row" style="gap:8px"><b style="font-size:13px">' + esc(s.name) + '</b>' +
+      (active ? '<span class="tag long">активная</span>' : '') +
+      (ready ? '' : '<span class="tag wait">в разработке</span>') + '</div>' +
+      '<div class="meta" style="margin-top:4px">' + esc(s.summary) + '</div></div>' +
+      '<button data-strategy="' + esc(s.id) + '"' + (canSwitch ? '' : ' disabled') +
+      ' style="' + (canSwitch ? '' : 'opacity:.5;cursor:not-allowed') + '">' +
+      (active ? 'используется' : ready ? 'включить' : 'скоро') + '</button></div>' +
+      '<ul style="margin:8px 0 0;padding-left:18px;color:var(--muted);font-size:11.5px;line-height:1.5">' +
+      (s.details || []).map((d) => '<li>' + esc(d) + '</li>').join('') + '</ul>' +
+      '<div style="margin-top:6px;color:#f59e0b;font-size:11.5px">' +
+      (s.risks || []).map((r) => '⚠ ' + esc(r)).join('<br/>') + '</div></div>';
+  }).join('');
+
+  document.querySelectorAll('[data-strategy]').forEach((btn) => {
+    btn.onclick = async () => {
+      const id = btn.getAttribute('data-strategy');
+      btn.disabled = true;
+      btn.textContent = 'переключение…';
+      try {
+        const r = await fetch('/api/strategy', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id }),
+        });
+        const res = await r.json();
+        btn.textContent = res.ok ? 'готово' : 'ошибка';
+        if (!res.ok && res.error) alert(res.error);
+      } catch (e) {
+        btn.textContent = 'ошибка';
+      }
+      setTimeout(loadStrategies, 3000);
+    };
+  });
+
+  renderSettings(c);
+}
+
+$('refreshBtn').onclick = () => { load(); loadStrategies(); };
+$('autoBtn').onclick = () => {
+  auto = !auto;
+  $('autoBtn').setAttribute('aria-pressed', String(auto));
+  if (auto) { load(); timer = setInterval(load, 5000); } else { clearInterval(timer); }
+};
+load();
+loadStrategies();
+timer = setInterval(load, 5000);
+</script>
+</body>
+</html>

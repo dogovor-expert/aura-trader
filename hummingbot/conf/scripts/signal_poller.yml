@@ -1,0 +1,10 @@
+script_file_name: signal_poller.py
+controllers_config: []
+connector_name: binance_paper_trade
+trading_pair: BTC-USDT
+signals_file: /home/hummingbot/data/signals.json
+min_confidence: 0.75
+order_quote: 100
+cooldown_sec: 1800
+poll_interval_sec: 15
+allow_test_signals: false

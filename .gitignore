@@ -1,0 +1,37 @@
+# === СЕКРЕТЫ — никогда не коммитить ===
+config/config.json
+config/proxy.yaml
+config/*.bak*
+.env
+*.env
+keystore_password.txt
+
+# Hummingbot: ключи бирж и пароль keystore
+hummingbot/conf/connectors/
+hummingbot/conf/.password_verification*
+hummingbot/keystore_password.txt
+
+# === данные и логи (локальные, не публикуем) ===
+logs/
+data/
+*.log
+hummingbot/data/
+hummingbot/logs/
+
+# === python ===
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ipynb_checkpoints/
+
+# === служебные бэкапы и временные файлы ===
+*.bak
+*.bak-mode
+*.bak-panel
+*.tmp
+
+# === ОС ===
+Thumbs.db
+desktop.ini
+.DS_Store
