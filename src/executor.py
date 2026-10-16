@@ -66,6 +66,19 @@ def paper_execute(analysis: Dict, log_path: str):
         print("\n".join(lines).encode("cp1251", "replace").decode("cp1251"))
     return lines
 
+def _bridge_token():
+    """Токен доступа к мосту: из env BRIDGE_TOKEN или config/bridge_token.txt."""
+    tok = os.getenv("BRIDGE_TOKEN", "").strip()
+    if tok:
+        return tok
+    try:
+        base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        with open(os.path.join(base, "config", "bridge_token.txt"), encoding="utf-8") as f:
+            return f.read().strip()
+    except OSError:
+        return ""
+
+
 def send_to_hummingbot(signal: Dict, webhook_url: str, timeout=10,
                       proxies=None) -> str:
     """POST verdict to bridge/webhook. No URL -> skip."""
@@ -74,7 +87,8 @@ def send_to_hummingbot(signal: Dict, webhook_url: str, timeout=10,
     import requests
     # bridge is local, never via proxy
     px = None if "127.0.0.1" in webhook_url or "localhost" in webhook_url else proxies
+    headers = {"X-Bridge-Token": _bridge_token()}
     r = requests.post(webhook_url, json={"signal": signal, "ts": _ts()},
-                      timeout=timeout, proxies=px)
+                      timeout=timeout, proxies=px, headers=headers)
     return f"webhook {r.status_code}: {r.text[:200]}"
 

@@ -8,6 +8,7 @@ Hummingbot side: configure webhook or read D:/Hummingbot/signals.json
 """
 import json
 import os
+import secrets
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from datetime import datetime
 
@@ -17,6 +18,35 @@ SIG_FILE = "D:/Hummingbot/signals.json"
 SIG_FILE_MOUNTED = "D:/Hummingbot/data/signals.json"
 LOG_FILE = os.path.join(BASE, "logs", "bridge.log")
 # каталог панели: src/web/index.html
+
+
+def _load_token():
+    """Токен доступа к мосту. Иначе любой сторонний сайт мог бы послать
+    POST на localhost и поменять настройки/стратегию (CSRF/DNS-rebind)."""
+    tok = os.getenv("BRIDGE_TOKEN", "").strip()
+    if tok:
+        return tok
+    path = os.path.join(BASE, "config", "bridge_token.txt")
+    try:
+        with open(path, encoding="utf-8") as f:
+            tok = f.read().strip()
+        if tok:
+            return tok
+    except OSError:
+        pass
+    tok = secrets.token_urlsafe(24)
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(tok)
+        os.chmod(path, 0o600)
+        print(f"[bridge] generated access token -> {path}")
+    except OSError:
+        pass
+    return tok
+
+
+TOKEN = _load_token()
 
 
 
@@ -43,19 +73,6 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def _send_html(self, code, path):
-        try:
-            with open(path, "rb") as f:
-                body = f.read()
-        except OSError:
-            return self._send(404, {"error": "dashboard not found"})
-        self.send_response(code)
-        self.send_header("Content-Type", "text/html; charset=utf-8")
-        self.send_header("Content-Length", str(len(body)))
-        self.send_header("Cache-Control", "no-store")
-        self.end_headers()
-        self.wfile.write(body)
-
     def _read_json_body(self):
         try:
             n = int(self.headers.get("Content-Length", 0))
@@ -63,8 +80,38 @@ class Handler(BaseHTTPRequestHandler):
         except Exception as e:
             return {"__error__": str(e)[:150]}
 
+    def _check_auth(self):
+        """Токен в заголовке X-Bridge-Token или в query (?token=...)."""
+        tok = self.headers.get("X-Bridge-Token", "") or ""
+        if not tok:
+            qs = self.path.split("?", 1)[1] if "?" in self.path else ""
+            for part in qs.split("&"):
+                if part.startswith("token="):
+                    tok = part[6:]
+                    break
+        return bool(tok) and secrets.compare_digest(tok, TOKEN)
+
+    def _send_dashboard(self):
+        """Отдаёт панель, подставляя токен вместо плейсхолдера."""
+        path = os.path.join(WEB_DIR, "index.html")
+        try:
+            with open(path, encoding="utf-8") as f:
+                html = f.read().replace("__BRIDGE_TOKEN__", TOKEN)
+        except OSError:
+            return self._send(404, {"error": "dashboard not found"})
+        body = html.encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(body)
+
     def do_POST(self):
         path = self.path.split("?", 1)[0]
+        if not self._check_auth():
+            log(f"unauthorized POST {path} from {self.client_address[0]}")
+            return self._send(401, {"ok": False, "error": "unauthorized: missing/invalid bridge token"})
         if path in ("/api/settings", "/api/strategy", "/api/trading"):
             import strategy_control
             data = self._read_json_body()
@@ -118,11 +165,13 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         path = self.path.split("?", 1)[0]
         if path in ("/", "/index.html", "/dashboard"):
-            return self._send_html(200, os.path.join(WEB_DIR, "index.html"))
+            return self._send_dashboard()
         if path == "/favicon.ico":
             self.send_response(204)
             self.end_headers()
             return
+        if path in ("/api/state", "/api/strategies") and not self._check_auth():
+            return self._send(401, {"error": "unauthorized: missing/invalid bridge token"})
         if path == "/api/state":
             try:
                 import dashboard_data

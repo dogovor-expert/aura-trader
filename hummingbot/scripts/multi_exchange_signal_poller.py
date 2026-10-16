@@ -58,6 +58,12 @@ class MultiExchangeSignalPollerConfig(StrategyV2ConfigBase):
     trades_file: str = Field(default="/home/hummingbot/data/trades.json")
     poll_interval_sec: int = Field(default=15)
     allow_test_signals: bool = Field(default=False)
+    # Свежесть сигнала: файл, пролежавший дольше этого времени (например,
+    # восстановленный из бэкапа старый сигнал), не исполняется.
+    signal_ttl_sec: int = Field(default=1800)
+    # Дедупликация переживает рестарт: иначе последний сигнал из файла
+    # исполнялся бы заново при каждом перезапуске стратегии.
+    state_file: str = Field(default="/home/hummingbot/data/signal_state.json")
 
     # Боевой режим и предохранители. control_file — файл-переключатель,
     # который кнопка «Торговля» в панели пишет извне: система продолжает
@@ -103,6 +109,7 @@ class MultiExchangeSignalPoller(StrategyV2Base):
         self._close_all_closed = 0
         self._active_orders = {}
         self._exchange_metrics = {}
+        self._load_state()
         
     def _read_signals(self):
         try:
@@ -393,8 +400,7 @@ class MultiExchangeSignalPoller(StrategyV2Base):
         """Публикует живое состояние для панели: режим торговли, позиции, P&L."""
         try:
             path = getattr(self.config, "trades_file", "/home/hummingbot/data/trades.json")
-            host_path = path.replace("/home/hummingbot/", "D:/Hummingbot/")
-            with open(host_path, encoding="utf-8") as f:
+            with open(path, encoding="utf-8") as f:
                 data = json.load(f)
         except Exception:
             data = {"trades": [], "open": 0}
@@ -460,6 +466,63 @@ class MultiExchangeSignalPoller(StrategyV2Base):
         if restored:
             self.logger().info(f"restored {restored} open position(s) after restart")
 
+    def _state_path(self):
+        # Стратегия исполняется в Linux-контейнере: путь из конфига — уже
+        # путь контейнера (/home/hummingbot/...), каталог смонтирован на хост.
+        return getattr(self.config, "state_file", "/home/hummingbot/data/signal_state.json")
+
+    def _load_state(self):
+        """Восстанавливает дедупликацию сигналов после рестарта.
+
+        Без этого последний LONG/SHORT из signals.json исполнялся бы снова
+        при каждом перезапуске, а кулдаун обнулялся.
+        """
+        try:
+            with open(self._state_path(), encoding="utf-8") as f:
+                data = json.load(f)
+            self._seen_signal_ts = data.get("seen_signal_ts") or self._seen_signal_ts
+            ts = data.get("last_order_ts")
+            if ts:
+                self._last_order_ts = float(ts)
+            if self._seen_signal_ts:
+                self.logger().info(f"restored signal state: last seen {self._seen_signal_ts}, "
+                                   f"last order ts {self._last_order_ts}")
+        except Exception:
+            pass
+
+    def _save_state(self):
+        try:
+            path = self._state_path()
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            tmp = path + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump({"seen_signal_ts": self._seen_signal_ts,
+                           "last_order_ts": self._last_order_ts}, f, ensure_ascii=False)
+            os.replace(tmp, path)
+        except Exception as e:
+            self.logger().warning(f"state save failed: {str(e)[:80]}")
+
+    def _signal_age_sec(self):
+        """Возраст файла сигнала в секундах (по mtime маунта — без проблем
+        с часовыми поясами контейнера и хоста)."""
+        try:
+            return max(0.0, time.time() - os.path.getmtime(self.config.signals_file))
+        except Exception:
+            return None
+
+    def _daily_realized_pnl(self):
+        """Реализованный P&L за текущие сутки (UTC, по epoch закрытия)."""
+        now = self.current_timestamp
+        day_start = now - (now % 86400)
+        total = 0.0
+        for t in self._closed_trades:
+            try:
+                if float(t.get("close_ts") or 0) >= day_start:
+                    total += float(t.get("pnl_quote") or 0.0)
+            except (TypeError, ValueError):
+                continue
+        return total
+
     def _cleanup_completed_orders(self):
         to_remove = []
         for order_id, info in self._active_orders.items():
@@ -507,6 +570,7 @@ class MultiExchangeSignalPoller(StrategyV2Base):
             data = self._read_signals()
             if data and data.get("ts") and data["ts"] != self._seen_signal_ts:
                 self._seen_signal_ts = data["ts"]
+                self._save_state()
                 sig = data.get("signal", data)
                 self.logger().info(
                     f"signal {data['ts']} {sig.get('final')} conf={sig.get('conf')} — trading disabled, skipped")
@@ -516,12 +580,24 @@ class MultiExchangeSignalPoller(StrategyV2Base):
         data = self._read_signals()
         if not data:
             return
-        
+
+        # Устаревший сигнал (из бэкапа или залежавшийся) не исполняем: его
+        # цена уже неактуальна, а вход по нему — это вход вслепую.
+        age = self._signal_age_sec()
+        if age is not None and age > self.config.signal_ttl_sec:
+            if data.get("ts") and data["ts"] != self._seen_signal_ts:
+                self._seen_signal_ts = data["ts"]
+                self._save_state()
+                self.logger().info(f"stale signal ignored (age {int(age)}s > ttl "
+                                   f"{self.config.signal_ttl_sec}s)")
+            return
+
         sig_ts = data.get("ts")
         sig = data.get("signal") or {}
         if sig_ts is None or sig_ts == self._seen_signal_ts:
             return
         self._seen_signal_ts = sig_ts
+        self._save_state()
         
         final = str(sig.get("final") or "").upper()
         try:
@@ -568,6 +644,15 @@ class MultiExchangeSignalPoller(StrategyV2Base):
         if now - self._last_order_ts < self.config.cooldown_sec:
             self.logger().info(f"cooldown active ({int(now - self._last_order_ts)}s) — skipped")
             return
+        # Дневной лимит убытка: kill-switch. Без него серия убыточных сделок
+        # за день не ограничена ничем.
+        dl_limit = float(getattr(self.config, "max_daily_loss_quote", 0) or 0)
+        if dl_limit > 0:
+            daily = self._daily_realized_pnl()
+            if daily <= -dl_limit:
+                self.logger().warning(f"daily loss limit reached ({daily:.4f} <= -{dl_limit}) "
+                                      f"— new entries blocked until next UTC day")
+                return
         if len(self._active_orders) >= self.config.max_concurrent_orders:
             self.logger().info("max concurrent orders reached — skipped")
             return
@@ -637,6 +722,7 @@ class MultiExchangeSignalPoller(StrategyV2Base):
             return False
 
         self._last_order_ts = now
+        self._save_state()
         self._active_orders[order_id] = {
             "exchange": exch_name,
             "pair": pair,

@@ -189,10 +189,15 @@ def run_cascade(heur: Dict[str, Any], llm_cfg: Dict[str, Any],
     prov = PROVIDERS.get(provider, {})
     l1_model = llm_cfg.get("l1_model") or prov.get("default_model", "")
     timeout = int(llm_cfg.get("timeout", 40))
+    # Числа из конфига, которые модель законно называет в обосновании
+    # (пороги и число сигналов) — чтобы verify не метил их как выдумку.
+    extra_nums = [float(llm_cfg.get("trade_conf", 0.75)),
+                  float(llm_cfg.get("l2_trigger_conf", 0.65)),
+                  float(len(heur.get("signals") or []))]
     try:
         t1 = call_llm(provider, l1_model, SYSTEM_PROMPT, user, proxies, timeout)
         v1 = parse_verdict(t1)
-        c1 = verify_verdict(v1, heur)
+        c1 = verify_verdict(v1, heur, extra_nums)
         v1 = c1.get("verdict", v1)
         v1["confidence"] = c1["confidence"]
         out["llm_l1"] = v1
@@ -214,7 +219,7 @@ def run_cascade(heur: Dict[str, Any], llm_cfg: Dict[str, Any],
             t2 = call_llm(l2p, l2m, SYSTEM_PROMPT + " You are the judge.",
                           user, proxies, timeout)
             v2 = parse_verdict(t2)
-            c2 = verify_verdict(v2, heur)
+            c2 = verify_verdict(v2, heur, extra_nums)
             v2 = c2.get("verdict", v2)
             v2["confidence"] = c2["confidence"]
             out["llm_l2"] = v2

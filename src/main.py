@@ -45,6 +45,7 @@ def one_cycle(cfg):
     # Собственный буфер вероятностей: baseline = медиана последних ~1 часа,
     # а не один 5-минутный срез (иначе шум съедал всё движение).
     prob_hist = update_prob_history(PROB_HIST_PATH, snap)
+    dead_events = []
     for label, ev in snap.items():
         prev_mk = baseline_markets(prob_hist, label) or (hist.get(label) or {}).get("markets", [])
         cur_mk = ev.get("markets", [])
@@ -52,9 +53,16 @@ def one_cycle(cfg):
         for m in cur_mk:
             m["_spikes"] = [sp for sp in spikes if sp[0] == m["question"]]
         n_ok = len([m for m in cur_mk if m.get('prices')])
+        # Рынок без цен или разрешённый (цены ровно 0/1) сигнала не даёт.
+        n_live = len([m for m in cur_mk if m.get('prices') and not m.get('_resolved')])
+        if n_live == 0:
+            dead_events.append(label)
         print(f"  {label}: {ev.get('title','')[:60]} | рынков={len(cur_mk)} "
-              f"с ценами={n_ok} | спайков={len(spikes)}" +
+              f"с ценами={n_ok} активных={n_live} | спайков={len(spikes)}" +
               (f" | ERR {ev.get('error')}" if ev.get('error') else ""))
+    if dead_events:
+        print(f"  ВНИМАНИЕ: нет активных рынков у событий {', '.join(dead_events)} — "
+              f"слаги устарели/разрешены, обнови polymarket_events в config.json")
     # prev btc
     try:
         with open(PRICE_PATH, encoding="utf-8") as f:
@@ -62,6 +70,7 @@ def one_cycle(cfg):
     except Exception:
         btc_prev = None
     heur = heuristic_signal(snap, btc, btc_prev or btc, thr)
+    heur["dead_events"] = dead_events
     # Новости: собираем каждый цикл и передаём модели как контекст.
     try:
         news_cfg = cfg.get("news", {})

@@ -1,6 +1,7 @@
 # === СЕКРЕТЫ — никогда не коммитить ===
 config/config.json
 config/proxy.yaml
+config/bridge_token.txt
 config/*.bak*
 .env
 *.env

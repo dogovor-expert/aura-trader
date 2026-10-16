@@ -75,6 +75,15 @@ def main():
                         "reasons": ["news net 0.12", "delta 6 pp"]}, HEUR)
     check("news score allowed", r["ok"] or not r["capped"], r["issues"])
 
+    print("== config/constant numbers allowed (no false fabrication) ==")
+    r = verify_verdict({"signal": "LONG", "confidence": 0.8,
+                        "reasons": ["confirmed on 2 exchanges", "matches min confidence 0.75"]},
+                       HEUR, extra=[0.75])
+    check("count and config number allowed", not r["capped"], r["fabricated"])
+    r = verify_verdict({"signal": "LONG", "confidence": 0.8,
+                        "reasons": ["inflow 0.87 vs 0.9"]}, HEUR, extra=[0.75])
+    check("unrelated decimal still flagged", r["capped"], r["fabricated"])
+
     print()
     if FAILURES:
         print(f"FAILED: {len(FAILURES)} — {FAILURES}")

@@ -113,4 +113,6 @@ default_sl_pct: 2.0
 default_tp_pct: 3.5
 min_free_quote: 0
 max_daily_loss_quote: 20
+signal_ttl_sec: 1800
+state_file: /home/hummingbot/data/signal_state.json
 trades_file: /home/hummingbot/data/trades.json

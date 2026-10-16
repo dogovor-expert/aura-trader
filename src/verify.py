@@ -33,8 +33,13 @@ def _f(value) -> float:
         return None
 
 
-def allowed_numbers(heur: Dict[str, Any]) -> List[float]:
-    """Все числа, которые legitimately есть во входе."""
+def allowed_numbers(heur: Dict[str, Any], extra: List[float] = None) -> List[float]:
+    """Все числа, которые legitimately есть во входе (+ числа из конфига).
+
+    extra — значения из настроек (порог уверенности, счётчики бирж/сигналов):
+    модель их законно называет в тексте, поэтому они не должны считаться
+    выдумкой (раньше «2 биржи» помечалось как fabrication).
+    """
     out = []
     for key in ("btc_price", "btc_chg_pct"):
         v = _f(heur.get(key))
@@ -49,6 +54,10 @@ def allowed_numbers(heur: Dict[str, Any]) -> List[float]:
     v = _f(sentiment)
     if v is not None:
         out.append(v)
+    for x in (extra or []):
+        v = _f(x)
+        if v is not None:
+            out.append(v)
     return out
 
 
@@ -59,7 +68,8 @@ def _close(value: float, pool: List[float], rel_tol=0.02, abs_tol=0.05) -> bool:
     return False
 
 
-def verify_verdict(verdict: Dict[str, Any], heur: Dict[str, Any]) -> Dict[str, Any]:
+def verify_verdict(verdict: Dict[str, Any], heur: Dict[str, Any],
+                   extra: List[float] = None) -> Dict[str, Any]:
     """Возвращает {ok, issues, fabricated, capped, confidence}."""
     issues: List[str] = []
     fabricated: List[str] = []
@@ -67,7 +77,7 @@ def verify_verdict(verdict: Dict[str, Any], heur: Dict[str, Any]) -> Dict[str, A
         return {"ok": False, "issues": ["verdict is not a dict"], "fabricated": [],
                 "capped": True, "confidence": FABRICATION_CAP}
 
-    pool = allowed_numbers(heur)
+    pool = allowed_numbers(heur, extra)
     v = dict(verdict)
 
     signal = str(v.get("signal", "")).upper()
@@ -118,6 +128,11 @@ def verify_verdict(verdict: Dict[str, Any], heur: Dict[str, Any]) -> Dict[str, A
             if num is None:
                 continue
             if _close(num, pool) or _close(num, [conf], abs_tol=0.01):
+                continue
+            # Малые целые — это счётчики и пороги из конфига («2 биржи»,
+            # «45 bps»), а не выдуманные измеримые величины. Дробные
+            # (0.87, 12.5) и большие числа по-прежнему проверяются.
+            if num == int(num) and abs(num) <= 20:
                 continue
             fabricated.append(f"{key}:{token}")
 

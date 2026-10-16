@@ -48,6 +48,8 @@ hummingbot/
    venv\Scripts\python src\main.py --once
    ```
 4. Мост и панель: `venv\Scripts\python src\bridge.py` → http://127.0.0.1:8181
+   (панель сама встраивает токен; прямые запросы к `/api/*` и `/signal` требуют
+   заголовок `X-Bridge-Token` — токен создаётся в `config/bridge_token.txt`).
 5. Стратегия Hummingbot: файлы из `hummingbot/` скопировать в свой `D:\Hummingbot`
    (`scripts/`, `conf/scripts/`). По умолчанию всё работает в **paper trade**
    (демо-симулятор), реальные ордера — только после подключения боевых коннекторов с ключами.
@@ -59,7 +61,8 @@ hummingbot/
 В репозиторий **не попадают**:
 
 - `config/config.json`, `config/proxy.yaml` — содержат логин/пароль прокси;
-- `.env` и переменные окружения (ключи LLM, `HBOT_PASSWORD`);
+- `config/bridge_token.txt` — токен доступа к мосту (создаётся автоматически);
+- `.env` и переменные окружения (ключи LLM, `HBOT_PASSWORD`, `BRIDGE_TOKEN`);
 - `logs/`, `data/` — рабочие данные (сделки, сигналы);
 - ключи бирж Hummingbot (`conf/connectors/`), файлы пароля keystore.
 

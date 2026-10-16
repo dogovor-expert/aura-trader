@@ -19,6 +19,20 @@ DATA = os.path.join(BASE, "data")
 TRADES = "D:/Hummingbot/data/trades.json"
 BRIDGE = "http://127.0.0.1:8181"
 
+
+def _token():
+    tok = os.getenv("BRIDGE_TOKEN", "").strip()
+    if tok:
+        return tok
+    try:
+        with open(os.path.join(BASE, "config", "bridge_token.txt"), encoding="utf-8") as f:
+            return f.read().strip()
+    except OSError:
+        return ""
+
+
+TOKEN = _token()
+
 RESULTS = []
 
 
@@ -29,7 +43,8 @@ def check(name, ok, detail=""):
 
 
 def get_json(url, timeout=20):
-    with urllib.request.urlopen(url, timeout=timeout) as r:
+    req = urllib.request.Request(url, headers={"X-Bridge-Token": TOKEN})
+    with urllib.request.urlopen(req, timeout=timeout) as r:
         return json.loads(r.read())
 
 
@@ -120,7 +135,8 @@ def stage_live():
     sig = {"signal": {"final": "LONG", "conf": 0.95, "btc": 82000,
                       "size_mult": 0.05, "stop_loss_pct": 6.0, "take_profit_pct": 2.0}}
     req = urllib.request.Request(BRIDGE + "/signal", data=json.dumps(sig).encode(),
-                                 headers={"Content-Type": "application/json"}, method="POST")
+                                 headers={"Content-Type": "application/json",
+                                          "X-Bridge-Token": TOKEN}, method="POST")
     try:
         with urllib.request.urlopen(req, timeout=20) as r:
             ok = r.status == 200

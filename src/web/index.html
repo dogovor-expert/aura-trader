@@ -4,6 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Aura Trader — мониторинг</title>
+<script>window.__BRIDGE_TOKEN__ = "__BRIDGE_TOKEN__";</script>
 <style>
   :root{
     --bg:#0b0e14; --panel:#121722; --panel-2:#171d2b; --line:#232b3d;
@@ -184,6 +185,11 @@
 const $ = (id) => document.getElementById(id);
 let timer = null, auto = true;
 
+// Токен моста: подставляется сервером при отдаче страницы. Без него
+// POST на /api/* вернёт 401 — сторонний сайт не сможет дёрнуть localhost.
+const TOKEN = window.__BRIDGE_TOKEN__ || '';
+const authHeaders = (extra) => Object.assign({ 'X-Bridge-Token': TOKEN }, extra || {});
+
 const pct = (v) => (v * 100).toFixed(1) + '%';
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const age = (sec) => {
@@ -349,7 +355,7 @@ function render(s) {
     try {
       await fetch('/api/trading', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: authHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ enabled: !ctl.trading_enabled }),
       });
     } finally {
@@ -364,7 +370,7 @@ function render(s) {
       try {
         await fetch('/api/trading', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: authHeaders({ 'Content-Type': 'application/json' }),
           body: JSON.stringify({ close_all: 'закрыть всё по кнопке в панели' }),
         });
       } finally {
@@ -384,7 +390,7 @@ function render(s) {
       try {
         await fetch('/api/trading', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: authHeaders({ 'Content-Type': 'application/json' }),
           body: JSON.stringify({ mode: toLive ? 'live' : 'demo' }),
         });
       } finally {
@@ -545,7 +551,7 @@ const pm = s.pumps || {};
 
 async function load() {
   try {
-    const r = await fetch('/api/state', { cache: 'no-store' });
+    const r = await fetch('/api/state', { cache: 'no-store', headers: authHeaders() });
     render(await r.json());
 } catch (e) {
     $('liveTxt').textContent = 'ошибка загрузки: ' + (e && e.message ? e.message : e);
@@ -555,7 +561,7 @@ async function load() {
 
 async function loadStrategies() {
   try {
-    const r = await fetch('/api/strategies', { cache: 'no-store' });
+    const r = await fetch('/api/strategies', { cache: 'no-store', headers: authHeaders() });
     renderStrategies(await r.json());
   } catch (e) {
     $('strategies').innerHTML = '<div class="muted">Каталог стратегий недоступен</div>';
@@ -610,7 +616,7 @@ function renderSettings(c) {
     try {
       const r = await fetch('/api/settings', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: authHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ settings: gather() }),
       });
       const res = await r.json();
@@ -654,7 +660,7 @@ function renderStrategies(c) {
       try {
         const r = await fetch('/api/strategy', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: authHeaders({ 'Content-Type': 'application/json' }),
           body: JSON.stringify({ id }),
         });
         const res = await r.json();
