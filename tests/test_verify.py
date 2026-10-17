@@ -84,6 +84,12 @@ def main():
                         "reasons": ["inflow 0.87 vs 0.9"]}, HEUR, extra=[0.75])
     check("unrelated decimal still flagged", r["capped"], r["fabricated"])
 
+    print("== sign-insensitive numbers allowed ==")
+    heur_neg = {"btc_price": 80897.9, "btc_chg_pct": -0.366, "verdict": "NEUTRAL", "signals": []}
+    r = verify_verdict({"signal": "WAIT", "confidence": 0.5,
+                        "reasons": ["BTC down 0.366% while deltas are small"]}, heur_neg)
+    check("magnitude of signed input allowed", not r["capped"], r["fabricated"])
+
     print()
     if FAILURES:
         print(f"FAILED: {len(FAILURES)} — {FAILURES}")

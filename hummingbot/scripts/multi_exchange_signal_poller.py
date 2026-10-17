@@ -64,6 +64,9 @@ class MultiExchangeSignalPollerConfig(StrategyV2ConfigBase):
     # Дедупликация переживает рестарт: иначе последний сигнал из файла
     # исполнялся бы заново при каждом перезапуске стратегии.
     state_file: str = Field(default="/home/hummingbot/data/signal_state.json")
+    # Защита от проскальзывания: если текущая цена ушла от цены сигнала
+    # (btc) больше чем на столько базисных пунктов — вход отклоняется.
+    max_deviation_bps: float = Field(default=20.0)
 
     # Боевой режим и предохранители. control_file — файл-переключатель,
     # который кнопка «Торговля» в панели пишет извне: система продолжает
@@ -109,6 +112,44 @@ class MultiExchangeSignalPoller(StrategyV2Base):
         self._close_all_closed = 0
         self._active_orders = {}
         self._exchange_metrics = {}
+        # Исполнения фиксируются событиями Hummingbot: get_order() у
+        # коннекторов НЕ существует (AttributeError глотался except-ом,
+        # и _cleanup_completed_orders никогда не убирал ордера — лимит
+        # max_concurrent_orders выгорал после 10 сделок навсегда).
+        self._filled_orders = set()
+        # Отменённые/упавшие ордера: тоже освобождают слот (иначе лимит
+        # max_concurrent_orders выгорает навсегда при одном отказе API).
+        self._dead_orders = set()
+
+    def did_complete_buy_order(self, event):
+        try:
+            self._filled_orders.add(event.order_id)
+        except Exception:
+            pass
+
+    def did_complete_sell_order(self, event):
+        try:
+            self._filled_orders.add(event.order_id)
+        except Exception:
+            pass
+
+    def did_fail_order(self, event):
+        try:
+            self._dead_orders.add(event.order_id)
+        except Exception:
+            pass
+
+    def did_cancel_order(self, event):
+        try:
+            self._dead_orders.add(event.order_id)
+        except Exception:
+            pass
+
+    def did_expire_order(self, event):
+        try:
+            self._dead_orders.add(event.order_id)
+        except Exception:
+            pass
         self._load_state()
         
     def _read_signals(self):
@@ -526,16 +567,17 @@ class MultiExchangeSignalPoller(StrategyV2Base):
     def _cleanup_completed_orders(self):
         to_remove = []
         for order_id, info in self._active_orders.items():
-            try:
-                connector = self.connectors[info["exchange"]]
-                order = connector.get_order(order_id)
-                if order and order.is_done:
-                    to_remove.append(order_id)
-                    self.logger().info(f"order {order_id} on {info['exchange']} completed: {order.executed_amount_base} @ {order.average_executed_price}")
-            except Exception:
-                pass
+            # Только события: get_order() у коннекторов Hummingbot нет.
+            if order_id in self._filled_orders:
+                to_remove.append(order_id)
+                self.logger().info(f"order {order_id} on {info['exchange']} completed")
+            elif order_id in self._dead_orders:
+                to_remove.append(order_id)
+                self.logger().warning(f"order {order_id} on {info['exchange']} failed/cancelled")
         for oid in to_remove:
             del self._active_orders[oid]
+            self._filled_orders.discard(oid)
+            self._dead_orders.discard(oid)
     def tick(self, timestamp: float):
         """Не ждём готовности всех бирж.
 
@@ -663,14 +705,15 @@ class MultiExchangeSignalPoller(StrategyV2Base):
             return
 
         placed = 0
+        ref_price = sig.get("btc")
         for exch_name, exch_cfg, pair in selections:
-            if self._place_order(exch_name, exch_cfg, pair, final, conf, now, size_mult):
+            if self._place_order(exch_name, exch_cfg, pair, final, conf, now, size_mult, ref_price):
                 placed += 1
         if placed:
             self.logger().info(f"signal executed on {placed} exchange(s): "
                                + ", ".join(s[0] for s in selections[:placed]))
 
-    def _place_order(self, exch_name, exch_cfg, pair, final, conf, now, size_mult=1.0):
+    def _place_order(self, exch_name, exch_cfg, pair, final, conf, now, size_mult=1.0, ref_price=None):
         """Один market-ордер на одной бирже. True, если ордер выставлен."""
         connector = self.connectors[exch_name]
         is_buy = final == "LONG"
@@ -681,6 +724,22 @@ class MultiExchangeSignalPoller(StrategyV2Base):
             return False
         if price is None or price <= 0:
             return False
+
+        # Проскальзывание: не входим, если цена ушла от цены сигнала дальше
+        # допустимого. Иначе market-ордер исполнится вслепую на устаревшей цене.
+        if ref_price is not None:
+            try:
+                ref = float(ref_price)
+            except (TypeError, ValueError):
+                ref = 0.0
+            limit = float(getattr(self.config, "max_deviation_bps", 0) or 0)
+            if ref > 0 and limit > 0:
+                dev_bps = abs(float(price) - ref) / ref * 10000.0
+                if dev_bps > limit:
+                    self.logger().warning(f"entry skipped on {exch_name}: price {price} "
+                                          f"deviates {dev_bps:.1f}bps from signal ref {ref} "
+                                          f"> {limit:.0f}bps")
+                    return False
 
         quote = float(self.config.order_quote) * max(0.05, min(1.0, size_mult or 1.0))
         # Цена из коннектора приходит Decimal, а коннекторы смешивают типы

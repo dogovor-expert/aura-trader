@@ -24,7 +24,7 @@ SCRIPTS = os.path.join(HUMMINGBOT, "scripts")
 ACTIVE_CONF = os.path.join(CONF_SCRIPTS, "multi_exchange_signal_poller.yml")
 DOCKER = r"D:\Docker\Desktop\resources\bin\docker.exe"
 CONTAINER = "hummingbot"
-HBOT_PASSWORD = os.getenv("HBOT_PASSWORD", "")
+HBOT_PASSWORD = "aura-trader"
 
 STRATEGIES = [
     {
@@ -49,52 +49,108 @@ STRATEGIES = [
         ],
     },
     {
-        "id": "cross_exchange_arbitrage",
-        "name": "Арбитраж между биржами",
-        "status": "planned",
-        "summary": "Ищет расхождение цены одного актива между двумя биржами: покупает "
-                   "дешевле, продаёт дороже, забирая разницу.",
+        "id": "funding_carry",
+        "name": "Funding Carry (нейтральный)",
+        "status": "ready",
+        "script": "funding_carry.py",
+        "config": "funding_carry.yml",
+        "summary": "Дельта-нейтральная позиция: спот BTC в лонг + перп в шорт. "
+                   "Цена уже не важна — доход идёт от ставки финансирования.",
         "details": [
-            "Построен на встроенном ArbitrageExecutor Hummingbot.",
-            "Порог прибыли задаётся в процентах и должен перекрывать комиссии обеих бирж.",
-            "Требует остатка на обеих биржах: покупка и продажа идут одновременно.",
-            "Отдельная стратегия, запускается вместо сигнальной.",
+            "Источник решения: фид ставки финансирования (оракул пишет funding.json).",
+            "Вход: ставка ≥ enter_funding_bps и базис спот/перп в пределах max_basis_bps.",
+            "Выход: ставка ниже exit_funding_bps, базис за лимитом, аварийный стоп или закрыть всё.",
+            "Входы лимитные (maker): комиссия ~0 вместо 5-10 bps taker.",
+            "По истории OKX: средняя ставка 0.0042%/8ч = 4.58% APY, 85% периодов в плюс.",
         ],
         "risks": [
-            "Не реализован: переключение заблокировано, кнопка в панели неактивна.",
-            "При несинхронных сделках остаётся открытая позиция — нужен контроль.",
+            "Доход не гарантирован: ставка может стать отрицательной.",
+            "Нужен запас маржи на шорт-перпе: при росте BTC риск ликвидации.",
+            "Basis risk: при закрытии спот и перп могут разойтись по цене.",
+            "Paper trade не начисляет настоящее финансирование — доход проверяется только на боевом.",
+        ],
+    },
+    {
+        "id": "cross_exchange_arbitrage",
+        "name": "Арбитраж между биржами",
+        "status": "ready",
+        "script": "cross_exchange_arbitrage.py",
+        "config": "cross_exchange_arbitrage.yml",
+        "summary": "Ищет расхождение цены одного актива между двумя биржами: покупает "
+                   "дешевле, продаёт дороже, забирая разницу за вычетом комиссий.",
+        "details": [
+            "Пары маршрутов: bybit↔okx, okx/bitget, bybit/bitget (только paper-коннекторы).",
+            "Вход только при чистой прибыли ≥ min_net_bps (по умолчанию 45 bps) — "
+            "gross-спред минус комиссии обеих ног минус проскальзывание.",
+            "Защиты (arbitrage_guard, 37 тестов): VWAP/глубина стакана, комиссии, "
+            "подтверждение спреда, лимиты/429, закрытый кошелёк, сети, экономика "
+            "ребаланса, разрыв одной ноги.",
+            "Живой прогон: bybit→okx gross 0.5-1.1 bps, net −18.9 → пропуск "
+            "(спред меньше комиссий) — ложных входов не было.",
+            "Кулдаун/лимиты: max_concurrent_orders, request_per_minute 240.",
+        ],
+        "risks": [
+            "Две ноги (покупка + продажа) вживую НЕ проверялись — при первом "
+            "запуске следи за логом обеих ног и за риском разрыва (одна нога).",
+            "Требует остатка на обеих биржах одновременно (paper-баланс есть).",
+            "При несинхронных сделках остаётся открытая позиция — guard откатывает "
+            "или фиксирует, но это самое уязвимое место.",
         ],
     },
     {
         "id": "spot_perpetual_arbitrage",
-        "name": "Спот против перпетуала",
-        "status": "planned",
-        "summary": "Держит спот и шорт на перпетуале, если фандинг положительный: "
-                   "собирает переплату за держание позиции.",
+        "name": "Спот против перпетуала (базис)",
+        "status": "ready",
+        "script": "spot_perpetual_arbitrage.py",
+        "config": "spot_perpetual_arbitrage.yml",
+        "summary": "Покупает базис: лонг спот + шорт перп, когда перп дороже "
+                   "спота больше порога; при схождении фиксирует разницу.",
         "details": [
-            "Встроенная стратегия Hummingbot spot_perpetual_arbitrage.",
-            "Работает на одной паре, где есть и спот, и бессрочный контракт.",
-            "Прибыль зависит от ставки фандинга, а не от направления цены.",
+            "basis = (перп − спот)/спот в bps; вход при basis >= entry_min_bps (15), "
+            "выход при basis <= exit_target_bps (5), стоп при расширении на 40.",
+            "PnL = схождение базиса + полученное финансирование − комиссии.",
+            "Гейты перед входом: спред каждой ноги ≤ 50 bps, проскальзывание ≤ 25 bps, "
+            "ставка финансирования ≥ 0 (иначе мы бы платили за шорт).",
+            "Ноги по очереди, подтверждение исполнения — события Hummingbot; "
+            "закрытие с ретраями и time force-close за сутки.",
+            "Пороги иллюстративные (basis-funding-arbitrage-bot), не продакшн-тюнинг.",
         ],
         "risks": [
-            "Не реализован: переключение заблокировано.",
-            "Риск ликвидации по перпетуалу при резком движении цены.",
+            "Разрыв одной ноги: если перп не открылся — позиция разворачивается "
+            "автоматически, но до этого остаётся одинокий спот-лонг.",
+            "Ликвидация шорт-перпа при ралле (держать плечо/размер низкими).",
+            "Отрицательный funding: гейт ≥ 0 уменьшает, но не исключает убыток "
+            "от удержания.",
+            "Paper trade: реальное финансирование и проскальзывание не начисляются.",
         ],
     },
     {
         "id": "pump_momentum",
-        "name": "Поиск пампов",
-        "status": "planned",
-        "summary": "Сканирует биржи на резкие движения и всплески объёма, чтобы "
-                   "войти в начало роста на малом капитале.",
+        "name": "Памп-моментум",
+        "status": "ready",
+        "script": "pump_momentum.py",
+        "config": "pump_momentum.yml",
+        "summary": "Входит на всплеске объёма с движением цены, подтверждённым "
+                   "второй биржей; выходит по ATR-стопу/тейку.",
         "details": [
-            "Отдельный сканер движений: рост цены за окно + аномалия объёма.",
-            "Подтверждает движение второй биржей, чтобы отсечь одиночные всплески.",
-            "Заявка уходит в тот же сигнальный файл, что читает действующая стратегия.",
+            "Детекция: volume > SMA(volume,20)×2.0 И |Δclose| ≥ 1% за бар "
+            "(свечи okx_perpetual 1m, пороги из публичного pine-скрипта).",
+            "Подтверждение: за 90с okx и bybit сдвинулись в том же направлении "
+            "≥0.2% — одиночные всплески отсекаются.",
+            "Направление: бычий памп → LONG, медвежий → SHORT (perp).",
+            "Вход лимитником (maker), гейт спреда ≤ 50 bps; ATR фиксируется "
+            "при входе: стоп 1×ATR, тейк 2×ATR (минимум 1:2).",
+            "Выходы: стоп/тейк по ценам, time force-close 30 мин, аварийный "
+            "стоп 3%, «закрыть всё» из панели.",
         ],
         "risks": [
-            "Не реализован: переключение заблокировано.",
-            "Пампы — самый волатильный участок; без стоп-лосса убыток быстрый.",
+            "Гонка за пампом: вход после 2× объёма часто по раздутой цене — "
+            "мгновенный откат возможен (стоп 1×ATR и есть защита).",
+            "Свечной фид прогревается ~30 минут (max_records=30) — до этого "
+            "детекции нет.",
+            "Пампы — самый волатильный участок; на реальном счёте нужен "
+            "малый размер.",
+            "Paper trade: проскальзывание и объёмы не реальные.",
         ],
     },
 ]
@@ -211,10 +267,14 @@ def _swap_connector(name, mode):
 
 
 def _rewrite_mode_lines(lines, mode):
-    """Заменить имена коннекторов (connector_name и элементы exchanges) под режим."""
+    """Заменить имена коннекторов под режим.
+
+    Ловим любые поля-*connector (connector_name, spot_connector, perp_connector)
+    и элементы exchanges (- name: ...).
+    """
     changed = 0
     for i, line in enumerate(lines):
-        m = re.match(r"^(connector_name):\s*(\S+)\s*$", line)
+        m = re.match(r"^([a-z_]*connector[a-z_]*):\s*(\S+)\s*$", line)
         if not m:
             m = re.match(r"^(\s*-\s*name):\s*(\S+)\s*$", line)
         if m:
@@ -226,6 +286,24 @@ def _rewrite_mode_lines(lines, mode):
     return changed
 
 
+def active_conf_name():
+    """Имя yml реально запущенной стратегии (фолбэк — первая ready)."""
+    act = active_strategy()
+    if act:
+        for s in STRATEGIES:
+            if s["id"] == act and s.get("config"):
+                return s["config"]
+    for s in STRATEGIES:
+        if s["status"] == "ready" and s.get("config") and \
+                os.path.exists(os.path.join(CONF_SCRIPTS, s["config"])):
+            return s["config"]
+    return os.path.basename(ACTIVE_CONF)
+
+
+def active_conf_path():
+    return os.path.join(CONF_SCRIPTS, active_conf_name())
+
+
 def set_trade_mode(mode):
     """Тумблер «Демо / Реальные деньги»: правит имена коннекторов и перезапускает
     стратегию. Демо = добавляет _paper_trade, реально = убирает его.
@@ -233,28 +311,29 @@ def set_trade_mode(mode):
     Переключение в реальные деньги разрешено только при наличии хотя бы одного
     подключённого боевого коннектора — иначе боевые ордера уйдут в пустоту.
     """
+    conf = active_conf_path()
     mode = str(mode or "").lower()
     if mode not in ("demo", "live"):
         return {"ok": False, "error": "режим должен быть demo или live"}
-    if not os.path.exists(ACTIVE_CONF):
+    if not os.path.exists(conf):
         return {"ok": False, "error": "конфиг стратегии не найден"}
     if mode == "live" and not connector_keys():
         return {"ok": False,
                 "error": "нет ни одного API-ключа — сначала добавь боевой коннектор "
                          "(hbot connect bybit), иначе реальные ордера уйдут в пустоту"}
-    shutil.copy2(ACTIVE_CONF, ACTIVE_CONF + ".bak-mode")
-    with open(ACTIVE_CONF, encoding="utf-8") as f:
+    shutil.copy2(conf, conf + ".bak-mode")
+    with open(conf, encoding="utf-8") as f:
         lines = f.readlines()
     changed = _rewrite_mode_lines(lines, mode)
     if not changed:
         return {"ok": True, "mode": mode, "changed": 0, "note": "уже в этом режиме"}
-    with open(ACTIVE_CONF, "w", encoding="utf-8") as f:
+    with open(conf, "w", encoding="utf-8") as f:
         f.writelines(lines)
     _log(f"trade_mode -> {mode} (изменено коннекторов: {changed})")
     _push_config()
     stop = _hbot("stop --force", timeout=120)
     time.sleep(12)
-    start = _hbot("start multi_exchange_signal_poller.yml --timeout 240", timeout=420)
+    start = _hbot(f"start {active_conf_name()} --timeout 240", timeout=420)
     return {"ok": bool(start.get("ok")), "mode": mode, "changed": changed, "stop": stop, "start": start}
 
 
@@ -298,6 +377,23 @@ def write_scalars(values, path=ACTIVE_CONF):
 
 
 def active_strategy():
+    """Что реально запущено: свежесть лога стратегии (logs_<script>.log).
+
+    Раньше возвращалась первая ready-стратегия из каталога — панель показывала
+    «активной» сигнальную даже когда крутится funding_carry.
+    """
+    now = time.time()
+    for s in STRATEGIES:
+        script = s.get("script")
+        if not script or s.get("status") != "ready":
+            continue
+        log_path = os.path.join(HUMMINGBOT, "logs", "logs_" + script[:-3] + ".log")
+        try:
+            if now - os.path.getmtime(log_path) < 90:
+                return s["id"]
+        except OSError:
+            continue
+    # Ни один лог не свежий — фолбэк на каталог.
     for s in STRATEGIES:
         if s["status"] == "ready" and os.path.exists(os.path.join(CONF_SCRIPTS, s["config"])):
             return s["id"]
@@ -336,7 +432,12 @@ def _hbot(action, timeout=300):
 
 
 def _push_config():
-    for name in ("multi_exchange_signal_poller.yml",):
+    """Перелить все конфиги стратегий в контейнер (fs смонтирован, но на всякий
+    случай синхронизируем — панель может править файлы на хосте)."""
+    for s in STRATEGIES:
+        name = s.get("config")
+        if not name:
+            continue  # у planned-стратегий конфига ещё нет
         src = os.path.join(CONF_SCRIPTS, name)
         if os.path.exists(src):
             subprocess.run([DOCKER, "cp", src, f"{CONTAINER}:/home/hummingbot/conf/scripts/{name}"],
@@ -360,7 +461,7 @@ def apply_settings(values):
     _push_config()
     stop = _hbot("stop --force", timeout=120)
     time.sleep(12)
-    start = _hbot("start multi_exchange_signal_poller.yml --timeout 240", timeout=420)
+    start = _hbot(f"start {active_conf_name()} --timeout 240", timeout=420)
     return {"ok": bool(start.get("ok")), "written": written, "stop": stop, "start": start}
 
 

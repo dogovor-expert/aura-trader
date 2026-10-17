@@ -154,8 +154,15 @@ class Handler(BaseHTTPRequestHandler):
         try:
             for target in (SIG_FILE, SIG_FILE_MOUNTED):
                 os.makedirs(os.path.dirname(target), exist_ok=True)
-                with open(target, "w", encoding="utf-8") as f:
+                # Атомарно: поллер не должен увидеть усечённый файл в момент
+                # перезаписи. Пишем в temp рядом и переименовываем os.replace
+                # (в ядре это атомарная подмена inode).
+                tmp = target + ".tmp"
+                with open(tmp, "w", encoding="utf-8") as f:
                     json.dump(entry, f, ensure_ascii=False, indent=2)
+                    f.flush()
+                    os.fsync(f.fileno())
+                os.replace(tmp, target)
         except Exception as e:
             return self._send(500, {"error": str(e)[:200]})
         log(f"signal -> {SIG_FILE} + {SIG_FILE_MOUNTED}: {json.dumps(sig, ensure_ascii=False)[:300]}")
@@ -195,10 +202,71 @@ class Handler(BaseHTTPRequestHandler):
         pass
 
 
+def _watchdog_loop():
+    """Авто-рестарт стратегии, зависшей в 'waiting for connectors'.
+
+    OKX из контейнера периодически отдаёт битый chunked-ответ
+    (TransferEncodingError) -> init коннектора падает и НЕ ретраится:
+    стратегия виснет в ожидании коннектора навсегда (мы это видели:
+    okx_perpetual и okx_paper по очереди зависали на десятки минут).
+    Правило: лог активной стратегии СВЕЖИЙ, последние 3 строки все про
+    'waiting for connectors', так дольше 15 минут -> рестарт
+    (кулдаун на стратегию 30 минут против штормов).
+    """
+    import time
+    stuck_since = {}
+    last_restart = {}
+    while True:
+        time.sleep(60)
+        try:
+            import strategy_control
+            sid = strategy_control.active_strategy()
+            if not sid:
+                continue
+            script = next((s.get("script") for s in strategy_control.STRATEGIES
+                           if s.get("id") == sid), None)
+            if not script:
+                continue
+            log_path = os.path.join(strategy_control.HUMMINGBOT, "logs",
+                                    "logs_" + script[:-3] + ".log")
+            try:
+                if time.time() - os.path.getmtime(log_path) > 120:
+                    # лог не обновляется -> стратегия не крутится (или
+                    # молчит) — не наш случай «живого зависания»
+                    stuck_since.pop(sid, None)
+                    continue
+                with open(log_path, encoding="utf-8", errors="replace") as f:
+                    f.seek(0, os.SEEK_END)
+                    f.seek(max(0, f.tell() - 4096))
+                    tail = [ln for ln in f.read().splitlines() if ln.strip()][-3:]
+            except OSError:
+                continue
+            waiting = bool(tail) and all("waiting for connectors" in ln for ln in tail)
+            if not waiting:
+                stuck_since.pop(sid, None)
+                continue
+            now = time.time()
+            stuck_since.setdefault(sid, now)
+            if now - stuck_since[sid] < 900:
+                continue
+            if now - last_restart.get(sid, 0) < 1800:
+                continue
+            log(f"watchdog: '{sid}' ждёт коннекторы >15 мин — авто-рестарт")
+            res = strategy_control.switch_strategy(sid)
+            last_restart[sid] = time.time()
+            stuck_since.pop(sid, None)
+            log(f"watchdog: рестарт '{sid}' ok={res.get('ok')} "
+                f"{res.get('error', '')}")
+        except Exception as e:
+            log(f"watchdog error: {e}")
+
+
 if __name__ == "__main__":
+    import threading
     port = int(os.getenv("BRIDGE_PORT", "8181"))
     # Threading: сбор состояния читает логи и docker, и не должен блокировать
     # загрузку страницы и /health.
+    threading.Thread(target=_watchdog_loop, daemon=True).start()
     srv = ThreadingHTTPServer(("127.0.0.1", port), Handler)
     srv.daemon_threads = True
     log(f"bridge listening on 127.0.0.1:{port}, file={SIG_FILE}")

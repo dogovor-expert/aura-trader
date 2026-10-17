@@ -1,0 +1,31 @@
+script_file_name: spot_perpetual_arbitrage.py
+controllers_config: []
+# Демо-режим: коннекторы с _paper_trade. Боевой режим включает
+# тумблер «Демо/Реальные» в панели (переименует коннекторы сам).
+spot_connector: okx_paper_trade
+perp_connector: okx_perpetual_paper_trade
+trading_pair: BTC-USDT
+# Базис (perp - spot)/spot в bps: вход при >= entry_min_bps (лонг спот +
+# шорт перп), выход при <= exit_target_bps (схождение).
+# Пороги покрывают ~12 bps round-trip комиссий (исследования basis-ботов).
+entry_min_bps: 15.0
+exit_target_bps: 5.0
+max_adverse_bps: 40.0
+# Бонусный гейт: фид ставки от оракула, не входим в шорт при ставке < 0.
+funding_file: /home/hummingbot/data/funding.json
+funding_ttl_sec: 1800
+min_funding_bps: 0.0
+# Ликвидность ног: спред и проскальзывание каждой ноги перед входом.
+max_spread_bps: 50.0
+max_slippage_bps: 25.0
+# Размер одной ноги в USDT (нотационная: спот-лонг и перп-шорт равны).
+order_quote: 100
+# maker (limit) вместо market: комиссия ~0 вместо taker на открытии.
+maker_entry: true
+fill_timeout_sec: 45
+emergency_loss_pct: 2.0
+max_hold_sec: 86400
+poll_interval_sec: 60
+control_file: /home/hummingbot/data/trading_control.json
+state_file: /home/hummingbot/data/basis_state.json
+publish_file: /home/hummingbot/data/basis_publish.json

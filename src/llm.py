@@ -34,7 +34,13 @@ RISK_RULES = (
 
 SYSTEM_PROMPT = (
     "You are a quant-style event-driven crypto analyst. INPUT gives Polymarket "
-    "probability deltas (leading indicator) and BTC price change (lagging). "
+    "probability deltas (and, per OpenMarket study, Polymarket LAGS Binance - so a "
+    "prob spike with z_btc ~ 0 is often book noise) and BTC price change. "
+    "market_regime is an objective 2-of-3 filter (ADX/ER/CHOP): in 'range' "
+    "directional signals are usually noise - lean WAIT unless two-factor "
+    "agreement (z_poly and z_btc both >= 2 in the same direction) is present; "
+    "liquidation_risk=true means a deleveraging cascade proxy - reduce size "
+    "expectations and distrust breakouts. "
     "NEWS holds recent headlines with a crude score (+ bullish, - bearish) and age "
     "in hours: use it only as context, never as proof, and never repeat a headline as "
     "a fact you verified. " + RISK_RULES + " "
@@ -165,15 +171,50 @@ def build_user_prompt(heur: Dict[str, Any]) -> str:
     sigs = heur.get("signals", [])[:12]
     compact = [{"event": s.get("event"), "market": (s.get("market") or "")[:90],
                 "prev": s.get("prev_prob"), "cur": s.get("cur_prob"),
-                "d_pp": s.get("delta_pp")} for s in sigs]
+                "d_pp": s.get("delta_pp"), "z_poly": s.get("z_poly"),
+                "z_btc": s.get("z_btc"), "two_factor": s.get("two_factor"),
+                "veto": s.get("veto")} for s in sigs]
     news_block = heur.get("news_digest") or ""
     pumps_block = heur.get("pumps_digest") or ""
     return ("INPUT:\n" + json.dumps(
         {"btc_price": heur.get("btc_price"), "btc_chg_pct": heur.get("btc_chg_pct"),
-         "heuristic_verdict": heur.get("verdict"), "deltas": compact},
-        ensure_ascii=False)[:3500]
+         "heuristic_verdict": heur.get("verdict"), "deltas": compact,
+         "market_regime": heur.get("market_regime"),
+         "z_btc": heur.get("z_btc"),
+         "liquidation_risk": heur.get("liquidation_risk", False),
+         "dead_events": heur.get("dead_events") or []},
+        ensure_ascii=False)[:4000]
             + ("\n\nNEWS:\n" + news_block if news_block else "")
             + ("\n\n" + pumps_block if pumps_block else ""))
+
+
+def _daily_directional_gate(llm_cfg: Dict[str, Any], consume: bool) -> bool:
+    """Дневной кап направленных сигналов от LLM (анти-overtrading).
+
+    Стейт в data/llm_cap.json {date, count}. consume=True — засчитать вход.
+    """
+    import datetime
+    cap = int(llm_cfg.get("max_directional_per_day", 6))
+    if cap <= 0:
+        return True
+    path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                        "data", "llm_cap.json")
+    today = datetime.datetime.utcnow().date().isoformat()
+    try:
+        with open(path, encoding="utf-8") as f:
+            st = json.load(f)
+    except Exception:
+        st = {}
+    if st.get("date") != today:
+        st = {"date": today, "count": 0}
+    if st.get("count", 0) >= cap:
+        return False
+    if consume:
+        st["count"] = st.get("count", 0) + 1
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(st, f)
+    return True
 
 
 def run_cascade(heur: Dict[str, Any], llm_cfg: Dict[str, Any],
@@ -229,7 +270,14 @@ def run_cascade(heur: Dict[str, Any], llm_cfg: Dict[str, Any],
                 final_sig, final_conf = v2["signal"], v2["confidence"]
         except Exception as e:
             out["llm_note"] = "L2 error (kept L1): " + str(e)[:200]
+    # Дискретизация уверенности по сетке 0.1 (López de Prado: дискретизация
+    # снижает churn и обнажает некалиброванность) — применяется ДО гейта.
+    final_conf = round(float(final_conf) * 10.0) / 10.0
     if final_conf < float(llm_cfg.get("trade_conf", 0.75)):
+        final_sig = "WAIT"
+    if final_sig != "WAIT" and not _daily_directional_gate(llm_cfg, consume=True):
+        note = f"daily directional cap {llm_cfg.get('max_directional_per_day', 6)}/day reached"
+        out["llm_note"] = (out.get("llm_note") + " | " + note) if out.get("llm_note") else note
         final_sig = "WAIT"
     out["final_signal"] = final_sig
     out["final_confidence"] = round(final_conf, 3)

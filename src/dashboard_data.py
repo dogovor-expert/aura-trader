@@ -648,6 +648,29 @@ def _exit_reasons(trades):
     return sorted(counts.items(), key=lambda kv: -kv[1])
 
 
+def signal_eval_block():
+    """Качество сигналов: forward-доходность BTC после сигнала vs база.
+
+    Источник — data/signal_eval.json (пишет scripts/eval_signals.py).
+    """
+    data = _read_json(os.path.join(DATA, "signal_eval.json"), None)
+    if not isinstance(data, dict) or not data.get("horizons"):
+        return {"available": False}
+    horizons = []
+    for h, hd in (data.get("horizons") or {}).items():
+        rows = []
+        for gname, labels in (hd.get("groups") or {}).items():
+            for label, s in (labels or {}).items():
+                hs = s.get("hit_rate")
+                rows.append({"group": gname, "label": label, "n": s.get("n"),
+                             "avg": s.get("avg"),
+                             "hit": (round(hs * 100) if hs is not None else None)})
+        horizons.append({"h": int(h), "market": hd.get("market"), "rows": rows})
+    horizons.sort(key=lambda x: x["h"])
+    return {"available": True, "cycles": data.get("cycles"), "period": data.get("period"),
+            "directional_final": data.get("directional_final"), "horizons": horizons}
+
+
 def collect_state():
     cfg = _read_json(CFG, {}) or {}
     price = _read_json(PRICE, {}) or {}
@@ -683,6 +706,7 @@ def collect_state():
         "trade_mode": trade_mode(),
         "trades": trades_block(),
         "pnl": pnl_block(),
+        "signal_eval": signal_eval_block(),
         "exchanges": strategy_exchanges(),
         "events": cfg.get("polymarket_events", []),
         "groups": markets(),

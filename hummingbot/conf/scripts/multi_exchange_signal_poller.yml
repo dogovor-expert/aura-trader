@@ -115,4 +115,5 @@ min_free_quote: 0
 max_daily_loss_quote: 20
 signal_ttl_sec: 1800
 state_file: /home/hummingbot/data/signal_state.json
+max_deviation_bps: 20
 trades_file: /home/hummingbot/data/trades.json

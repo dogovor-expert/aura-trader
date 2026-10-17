@@ -1,0 +1,33 @@
+script_file_name: pump_momentum.py
+controllers_config: []
+# Демо-режим: коннекторы с _paper_trade. Боевой режим — тумблер в панели.
+# Источник свечей — имя фида БЕЗ суффикса _paper_trade.
+candle_connector: okx_perpetual
+candle_interval: 1m
+max_records: 30
+# Детекция пампа (объём 2x SMA(20) + движение 1% за бар).
+volume_period: 20
+volume_multiplier: 2.0
+price_move_threshold_pct: 1.0
+# Подтверждение второй биржей: знак движения совпадает.
+entry_connector: okx_perpetual_paper_trade
+confirm_connector: bybit_perpetual_paper_trade
+trading_pair: BTC-USDT
+confirm_window_sec: 90
+confirm_min_move_pct: 0.2
+# Выходы: стоп 1xATR, тейк 2xATR.
+atr_length: 14
+sl_atr_mult: 1.0
+tp_atr_mult: 2.0
+# Исполнение и лимиты.
+order_quote: 100
+max_spread_bps: 50
+cooldown_sec: 600
+max_hold_sec: 1800
+# Предохранители.
+emergency_loss_pct: 3.0
+fill_timeout_sec: 45
+poll_interval_sec: 60
+control_file: /home/hummingbot/data/trading_control.json
+state_file: /home/hummingbot/data/pump_state.json
+publish_file: /home/hummingbot/data/pump_publish.json

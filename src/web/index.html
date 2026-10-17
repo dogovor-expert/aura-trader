@@ -112,6 +112,11 @@
       </div>
 
       <div class="card" style="margin-bottom:14px">
+        <h2>Качество сигналов <span class="count" id="evalMeta"></span></h2>
+        <div id="signalEval"></div>
+      </div>
+
+      <div class="card" style="margin-bottom:14px">
         <h2>Торговля: запустить / остановить</h2>
         <div id="tradingToggle"></div>
       </div>
@@ -315,6 +320,30 @@ function render(s) {
         ${open ? `<table><thead><tr><th>Биржа</th><th>Пара</th><th>Вход</th><th>Сейчас</th><th>Стоп/Тейк</th></tr></thead><tbody>${open}</tbody></table>`
               : '<div class="muted">Открытых позиций нет</div>'}`;
       })();
+
+  const E = s.signal_eval || {};
+  $('evalMeta').textContent = E.available
+    ? `${E.cycles} циклов · направленных ${E.directional_final ?? 0}`
+    : 'нет данных оценки';
+  $('signalEval').innerHTML = !E.available
+    ? '<div class="muted">Запусти <span class="mono">scripts/eval_signals.py</span> — отчёт появится здесь</div>'
+    : (E.horizons || []).map((hz) => {
+        const m = hz.market || {};
+        const mAvg = (m.avg != null) ? ((m.avg >= 0 ? '+' : '') + m.avg + '%') : '—';
+        const rows = (hz.rows || []).map((r) => {
+          const hit = r.hit == null ? '—' : r.hit + '%';
+          const hcls = r.hit == null ? 'muted' : r.hit >= 50 ? 'up' : 'down';
+          const acls = r.avg >= 0 ? 'up' : 'down';
+          return `<tr><td class="muted" style="font-size:11px">${esc(r.group)}</td>
+            <td>${esc(r.label)}</td><td class="mono">${r.n}</td>
+            <td class="mono ${acls}">${(r.avg >= 0 ? '+' : '') + r.avg}%</td>
+            <td class="mono ${hcls}">${hit}</td></tr>`;
+        }).join('');
+        return `<div style="margin-bottom:12px">
+          <div class="meta" style="margin-bottom:4px">Горизонт +${hz.h} мин · рынок (база): ${mAvg}</div>
+          <table><thead><tr><th>источник</th><th>сигнал</th><th>n</th><th>ср. возврат</th><th>hit</th></tr></thead>
+          <tbody>${rows}</tbody></table></div>`;
+      }).join('');
 
   const ctl = (P.control || {});
   $('tradingToggle').innerHTML = `

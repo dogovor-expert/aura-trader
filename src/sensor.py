@@ -1,8 +1,11 @@
+# -*- coding: utf-8 -*-
 """Polymarket sensor: опрос Gamma API без ключей, съём вероятностей."""
+import json as _json
 import requests
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional
 
 GAMMA = "https://gamma-api.polymarket.com"
+CLOB = "https://clob.polymarket.com"
 HEADERS = {"User-Agent": "Mozilla/5.0 (polymarket-oracle/1.0)"}
 
 def _to_float(x) -> float:
@@ -60,6 +63,16 @@ def parse_markets(event: Dict[str, Any]) -> List[Dict[str, Any]]:
         resolved = (len(prices) == 2 and
                     ((prices[0] == 0 and prices[1] == 1) or
                      (prices[0] == 1 and prices[1] == 0)))
+        # clobTokenIds выровнены с outcomes — берём токен Yes (для стакана)
+        token = ""
+        try:
+            ids = m.get("clobTokenIds")
+            if isinstance(ids, str):
+                ids = _json.loads(ids)
+            if ids and yes_idx < len(ids):
+                token = str(ids[yes_idx])
+        except Exception:
+            token = ""
         out.append({
             "question": m.get("question", ""),
             "title": m.get("groupItemTitle", "") or m.get("question", ""),
@@ -69,9 +82,42 @@ def parse_markets(event: Dict[str, Any]) -> List[Dict[str, Any]]:
             "lastTradePrice": last,
             "volume": m.get("volume") or m.get("volumeNum") or "0",
             "slug": m.get("slug", ""),
+            "clob_token": token,
             "_resolved": resolved,
         })
     return out
+
+
+def fetch_book_stats(token_id: str, timeout: int = 10, proxies=None) -> Optional[Dict[str, Any]]:
+    """Стакан CLOB для токена: спред в п.п. и глубина топ-3 уровней ($).
+
+    Тонкий рынок (анти-сквиз по брифу): spread > 0.02 (2 цента на бинарнике)
+    ИЛИ глубина топ-3 < $3000 -> сигнал с такой книгой — шум/манёвр, не edge.
+    """
+    if not token_id:
+        return None
+    try:
+        r = requests.get(f"{CLOB}/book", params={"token_id": token_id},
+                         headers=HEADERS, timeout=timeout, proxies=proxies)
+        r.raise_for_status()
+        book = r.json()
+        bids = [(_to_float(x.get("price")), _to_float(x.get("size")))
+                for x in (book.get("bids") or [])]
+        asks = [(_to_float(x.get("price")), _to_float(x.get("size")))
+                for x in (book.get("asks") or [])]
+        if not bids or not asks:
+            return {"spread_pts": None, "depth_usd": None, "thin": True}
+        best_bid = max(b for p, s in bids for b in [p])
+        best_ask = min(a for a, s in asks)
+        spread = round(best_ask - best_bid, 4)
+        top_bids = sorted(bids, key=lambda x: -x[0])[:3]
+        top_asks = sorted(asks, key=lambda x: x[0])[:3]
+        depth = sum(p * s for p, s in top_bids + top_asks)
+        thin = bool(spread > 0.02 or depth < 3000.0)
+        return {"best_bid": best_bid, "best_ask": best_ask,
+                "spread_pts": spread, "depth_usd": round(depth, 0), "thin": thin}
+    except Exception:
+        return None
 
 def poll_all(slugs_labels, timeout=25, proxies=None) -> Dict[str, Any]:
     """slugs_labels: [(slug,label)] -> {label: {title, markets, ts}}"""

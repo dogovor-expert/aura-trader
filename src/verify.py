@@ -78,6 +78,7 @@ def verify_verdict(verdict: Dict[str, Any], heur: Dict[str, Any],
                 "capped": True, "confidence": FABRICATION_CAP}
 
     pool = allowed_numbers(heur, extra)
+    pool_abs = [abs(p) for p in pool]
     v = dict(verdict)
 
     signal = str(v.get("signal", "")).upper()
@@ -127,7 +128,10 @@ def verify_verdict(verdict: Dict[str, Any], heur: Dict[str, Any],
             num = _f(token)
             if num is None:
                 continue
-            if _close(num, pool) or _close(num, [conf], abs_tol=0.01):
+            # Знак не важен: модель законно называет модуль числа из входа
+            # («BTC -0.366%» -> в тексте «0.366%»), это не выдумка.
+            if (_close(num, pool) or _close(abs(num), pool_abs)
+                    or _close(num, [conf], abs_tol=0.01)):
                 continue
             # Малые целые — это счётчики и пороги из конфига («2 биржи»,
             # «45 bps»), а не выдуманные измеримые величины. Дробные

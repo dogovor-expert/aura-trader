@@ -1,0 +1,27 @@
+script_file_name: funding_carry.py
+controllers_config: []
+# Демо-режим: коннекторы с _paper_trade. Боевой режим включает
+# тумблер «Демо/Реальные» в панели (переименует коннекторы сам).
+spot_connector: okx_paper_trade
+perp_connector: okx_perpetual_paper_trade
+trading_pair: BTC-USDT
+# Фид ставки финансирования пишет оракул (oracle/src/funding.py).
+funding_file: /home/hummingbot/data/funding.json
+funding_ttl_sec: 1800
+funding_exit_stale_sec: 21600
+# Пороги в bps за 8ч. По истории OKX (100 периодов): среднее 0.42 bps,
+# 85% периодов положительные, текущая ставка обычно 0.4-1 bps.
+enter_funding_bps: 0.4
+exit_funding_bps: 0.1
+min_funding_percentile: 50.0
+max_basis_bps: 50
+min_hold_sec: 86400
+# Размер одной ноги в USDT (нотационная: спот-лонг и перп-шорт равны).
+order_quote: 100
+# maker (limit) вместо market: комиссия ~0 вместо 15 bps taker на открытие.
+maker_entry: true
+fill_timeout_sec: 45
+emergency_loss_pct: 2.0
+poll_interval_sec: 60
+control_file: /home/hummingbot/data/trading_control.json
+state_file: /home/hummingbot/data/carry_state.json
